@@ -3,7 +3,11 @@ import json
 import math
 import os
 import random
+import shutil
+import tempfile
+import time
 import unittest
+from unittest import mock
 
 import backtest_strategies as bt
 from bot import candles, strategies
@@ -87,6 +91,24 @@ class Backtest(unittest.TestCase):
         self.assertEqual(bt.verdict(mk(0.2, 0.1))[0], "PASSED")
         self.assertEqual(bt.verdict(mk(0.2, -0.1)), ("FAILED BACKTEST", "lost money out of sample at 0.4% fee"))
         self.assertEqual(bt.verdict(mk(-0.2, -0.3))[0], "FAILED BACKTEST")
+
+
+class Cache(unittest.TestCase):
+    def test_forming_candle_is_never_cached(self):
+        now = int(time.time() * 1000)
+        last_open = now // H * H  # this hour is still forming
+        rows = [(t, 1.0, 1.0, 1.0, 1.0, 1.0, t + H - 1) for t in range(last_open - 5 * H, last_open + H, H)]
+        tmp, cwd = tempfile.mkdtemp(), os.getcwd()
+        os.chdir(tmp)
+        try:
+            with mock.patch("backtest_strategies.BinanceSpot") as api:
+                api.return_value.klines.return_value = rows
+                got = bt.hourly("BTCUSDT")
+            self.assertEqual(got[-1][0], last_open - H)
+            self.assertEqual(bt.load_cache("BTCUSDT")[-1][0], last_open - H)
+        finally:
+            os.chdir(cwd)
+            shutil.rmtree(tmp)
 
 
 if __name__ == "__main__":

@@ -79,7 +79,8 @@ def hourly(symbol, offline=False):
                 break
             time.sleep(0.05)
         dedup = {r[0]: r for r in rows}
-        rows = [dedup[k] for k in sorted(dedup)]
+        # only closed candles go in the cache; the still-forming hour would otherwise stay frozen in it
+        rows = cd.closed([dedup[k] for k in sorted(dedup)], "1h", int(time.time() * 1000))
         save_cache(symbol, rows)
     return cd.closed(rows, "1h", int(time.time() * 1000))
 
