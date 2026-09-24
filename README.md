@@ -6,17 +6,22 @@ Four spot strategies (long or cash, BTC and ETH) each run their own **$15 demo a
 - **TESTNET (TESTNET=1 in `.env`):** the selected strategy (`engine.testnet_strategy` in `config.json`, default TREND_D1) also sends real MARKET orders to Binance's official Spot Testnet, which uses fake funds. This shows real order placement and fills. From your location, testnet.binance.vision answers HTTP 451 ("restricted location"). The dashboard then shows **"TESTNET: blocked by exchange location"**, re-checks at most once every 15 minutes, and demo keeps running. If testnet becomes reachable, it starts working with no code change. There are no VPN or proxy workarounds, on purpose.
 - **LIVE: off.** `bot/broker.py` `LiveBroker` still refuses to start. The code never reads real exchange keys and never calls api.binance.com trading endpoints.
 
-## Quick start (Mac Terminal, from this folder)
+## Quick start (Mac)
+First time: paste this into Terminal. It downloads the bot into a folder named `crypto-bot-live` in your home folder, installs 4 small packages, and starts everything:
 ```bash
-python3 -m pip install -r requirements.txt   # fastapi, uvicorn, websockets (dashboard only)
-cp .env.example .env                         # then add testnet keys and/or Telegram (optional)
-python3 -m unittest discover tests           # offline tests, about 3 seconds
-python3 backtest_strategies.py               # the backtest table; writes data/backtest_results.json
-python3 -m bot.server                        # starts everything
+cd ~
+git clone https://github.com/jurat11/crypto-bot.git crypto-bot-live
+cd crypto-bot-live
+python3 -m pip install -r requirements.txt
+python3 -m bot.server
 ```
-Open **http://localhost:8000**. Stop with Ctrl+C. Start it again later and every account carries on where it was.
+On the **first launch** it runs the backtest (about a minute), prints the table, and only then starts the demo accounts. A strategy with no backtest result never trades. Your browser then opens **http://localhost:8000**, and the same table is on the dashboard. Leave the Terminal window open while the bot runs. Ctrl+C stops it.
 
-Which strategies trade in demo is set by `engine.strategies` in `config.json`. The Hold 50/50 benchmark always runs.
+Next time: double-click `start.command` in the `crypto-bot-live` folder, or run `cd ~/crypto-bot-live && python3 -m bot.server`. Every account carries on where it left off.
+
+Optional: `cp .env.example .env`, then add testnet keys and/or Telegram (see below). `python3 -m unittest discover tests` runs the offline tests (about 3 seconds). `python3 backtest_strategies.py` re-runs the backtest on fresh data.
+
+Which strategies may trade is set by `engine.strategies` in `config.json` (all four by default). The Hold 50/50 benchmark always runs.
 
 ## The strategies
 | Account | Timeframe | Rule |
@@ -35,12 +40,13 @@ Each strategy runs a 50% BTC and a 50% ETH sleeve and decides **only on closed c
 1. **Banner** (top): always "DEMO: no real money". With TESTNET=1 there is a second banner: "TESTNET: fake funds, real orders." when it works, or the reason it does not (for example "blocked by exchange location"). A red "STOPPED" banner appears while the STOP file exists.
 2. **Leaderboard:** all demo accounts, sorted by P&L. For each: balance to 4 decimals (it flashes green or red as prices move), P&L in $ and %, max drawdown since start, trade count, win rate (share of sells that made money after fees), and fees paid. Badges: *FAILED BACKTEST / backtest passed / not backtested*, *benchmark*, and *TESTNET* for the strategy mirrored to testnet. Under each name you see its cash and the $ value held in BTC and ETH.
 3. **Equity since start:** every account on one chart, one point per minute, with the last point moving every second. Hover to read all accounts at one time. The leaderboard shows the same numbers as a table.
-4. **Live prices:** BTC and ETH mid price, bid, ask, spread in $ and basis points, where the price came from (websocket or REST fallback), and how old it is.
-5. **What each strategy is doing:** one plain-English line per coin, for example "BTC: waiting, BTC is 1.8% below the 48h high (86,000)", plus the time of its next decision.
-6. **Risk per account:** green OK or red BLOCKED with the reasons: kill switch, stale prices (older than 3 minutes), daily loss over 8% (UTC day), drawdown over 35%. A block stops buys. Sells that reduce risk still go through. Risk is checked every minute and again right before every buy.
-7. **STOP button:** after you confirm, it creates the `STOP` file, and new buys halt at once (the risk panel turns red within a minute). Delete the `STOP` file to resume.
-8. **Activity:** every check, signal, order, fill, risk event and testnet result, with UTC timestamps. The chips filter it; the once-a-minute "checks" are hidden unless you turn them on.
-9. **Orders & fills:** every demo and testnet order: quantity, average fill price, $ value, fee, and slippage against the mid price. For testnet fills, **"Real vs sim slip"** compares what the exchange actually filled with what the simulator predicted from the same testnet order book. Testnet prices are labelled TESTNET, because testnet prices can differ from the real market.
+4. **Backtest before demo:** the in-sample (2018-22) and out-of-sample (2023+) table for each strategy at 0.1% and 0.4% fees, next to Hold 50/50, with the PASSED / FAILED BACKTEST verdict.
+5. **Live prices:** BTC and ETH mid price, bid, ask, spread in $ and basis points, where the price came from (websocket or REST fallback), and how old it is.
+6. **What each strategy is doing:** one plain-English line per coin, for example "BTC: waiting, BTC is 1.8% below the 48h high (86,000)", plus the time of its next decision.
+7. **Risk per account:** green OK or red BLOCKED with the reasons: kill switch, stale prices (older than 3 minutes), daily loss over 8% (UTC day), drawdown over 35%. A block stops buys. Sells that reduce risk still go through. Risk is checked every minute and again right before every buy.
+8. **STOP button:** after you confirm, it creates the `STOP` file, and new buys halt at once (the risk panel turns red within a minute). Delete the `STOP` file to resume.
+9. **Activity:** every check, signal, order, fill, risk event and testnet result, with UTC timestamps. The chips filter it; the once-a-minute "checks" are hidden unless you turn them on.
+10. **Orders & fills:** every demo and testnet order: quantity, average fill price, $ value, fee, and slippage against the mid price. For testnet fills, **"Real vs sim slip"** compares what the exchange actually filled with what the simulator predicted from the same testnet order book. Testnet prices are labelled TESTNET, because testnet prices can differ from the real market.
 
 Only realized and marked-to-market numbers after fees are shown. Holdings are valued at the live mid price, and fees already paid are deducted. There are no projections.
 
@@ -81,6 +87,8 @@ How testnet orders stay safe:
 | `bot/accounts.py`, `bot/db.py` | $15 accounts and the SQLite store (`data/bot.db`: accounts, equity, receipts, fills, events) |
 | `bot/alerts.py` | optional Telegram: every trade, every risk block, daily 00:15 UTC leaderboard |
 | `backtest_strategies.py` | the in-sample/out-of-sample table for all four strategies |
+| `start.command` | double-click launcher for the Mac |
+| `bot/net.py` | TLS certificates (falls back to certifi on python.org Python for Mac); verification is never turned off |
 | `bot/devmarket.py` | `--fake-market` for working on the page offline (made-up prices, `data/dev.db`, labelled FAKE) |
 
 Every decision writes a **receipt** to `data/bot.db` (table `receipts`). It records the inputs, the signal, the risk result, the order, and the fill price, fee and slippage against the mid price. To look at receipts: `sqlite3 data/bot.db "select * from receipts order by id desc limit 20"`.

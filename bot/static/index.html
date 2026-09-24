@@ -154,6 +154,12 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
     </section>
   </div>
 
+  <section class="card" style="margin-bottom:14px">
+    <h2>Backtest before demo · in-sample 2018-22 vs out-of-sample 2023+</h2>
+    <div class="scroll-x" id="backtest"><div class="empty">Loading…</div></div>
+    <div class="sub" id="backtest-note" style="margin-top:8px">Same decision code as the live engine, run on Binance hourly candles. A strategy that loses money out of sample at either fee is flagged FAILED BACKTEST; it still runs in demo. Parameters were never tuned to pass. Past results do not predict future ones.</div>
+  </section>
+
   <div class="grid g-half">
     <section class="card">
       <h2>What each strategy is doing</h2>
@@ -424,6 +430,38 @@ function liveChartPoint(snap) {
   chart.update("none");
 }
 
+// ---------- backtest table ----------
+async function loadBacktest() {
+  let rep = {};
+  try { rep = await (await fetch("/api/backtest")).json(); } catch (e) { return; }
+  const box = $("backtest");
+  if (!rep.strategies) {
+    box.replaceChildren(el("div", { class: "empty" }, "No backtest yet. It runs automatically the first time the server starts, or run: python3 backtest_strategies.py"));
+    return;
+  }
+  const head = ["Strategy", "Fee", "IS CAGR", "IS max DD", "OOS CAGR", "OOS return", "OOS max DD", "OOS trades", "OOS win rate", "Verdict"];
+  const cell = (v, num = true, cls = "") => el("td", { class: (num ? "num " : "") + cls }, v);
+  const rows = [];
+  for (const [name, st] of Object.entries(rep.strategies)) {
+    Object.entries(st.results).forEach(([fee, r], i) => {
+      const verdict = i === 0 ? el("span", { class: "badge " + (st.verdict === "PASSED" ? "pass" : "fail"), style: "margin-left:0", title: st.why }, st.verdict) : "";
+      rows.push(el("tr", {},
+        el("td", {}, i === 0 ? el("span", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, name)) : ""),
+        cell(fmtPct(+fee, 1)), cell(fmtPct(r.is.cagr, 1)), cell(fmtPct(r.is.max_dd, 0)),
+        cell(fmtPct(r.oos.cagr, 1), true, sgnClass(r.oos.cagr)), cell(fmtPct(r.oos["return"], 1, true), true, sgnClass(r.oos["return"])),
+        cell(fmtPct(r.oos.max_dd, 0)), cell(r.oos.trades), cell(r.oos.win_rate == null ? "–" : fmtPct(r.oos.win_rate, 0)),
+        el("td", {}, verdict)));
+    });
+  }
+  const h = rep.hold;
+  if (h) rows.push(el("tr", {}, el("td", {}, el("span", { class: "key", style: `background:${colorOf("HOLD_50_50")}` }), el("strong", {}, "Hold 50/50 BTC/ETH")),
+    cell("none"), cell(fmtPct(h.is.cagr, 1)), cell(fmtPct(h.is.max_dd, 0)), cell(fmtPct(h.oos.cagr, 1), true, sgnClass(h.oos.cagr)),
+    cell(fmtPct(h.oos["return"], 1, true), true, sgnClass(h.oos["return"])), cell(fmtPct(h.oos.max_dd, 0)), cell(0), cell("–"),
+    el("td", {}, el("span", { class: "badge", style: "margin-left:0" }, "benchmark"))));
+  box.replaceChildren(el("table", {}, el("thead", {}, el("tr", {}, ...head.map((x, i) => el("th", { class: i > 1 && i < 9 || i === 1 ? "num" : "" }, x)))), el("tbody", {}, ...rows)));
+  if (h) $("backtest-note").textContent = `In-sample ${h.is.start} to ${h.is.end}, out-of-sample ${h.oos.start} to ${h.oos.end}, generated ${String(rep.generated_utc || "").replace("T", " ").slice(0, 16)} UTC. ` + $("backtest-note").textContent;
+}
+
 // ---------- stream ----------
 let lastMsg = 0;
 function onSnapshot(s) {
@@ -456,7 +494,7 @@ $("stop-yes").onclick = async () => {
 // Re-read theme colors when the OS theme flips.
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (chart) { chart.destroy(); chart = null; } buildChart(); loadHistory(); });
 
-initChips(); buildChart(); loadHistory(); connect();
+initChips(); buildChart(); loadHistory(); loadBacktest(); connect();
 setInterval(() => { if (chart) { chart.data.datasets.forEach((d) => { d.data = d.data.filter((p) => !p.live); }); } loadHistory(); }, 60000);
 </script>
 </body>

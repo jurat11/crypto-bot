@@ -1,10 +1,14 @@
 """Live dashboard: python3 -m bot.server  ->  http://localhost:8000
 
-Starts the market feed, the demo engine, the optional testnet worker and a
-FastAPI app that streams the engine snapshot over Server-Sent Events every second.
+On the first launch it runs backtest_strategies.py (about a minute), prints the
+table, and only then puts the strategies into demo: a strategy with no backtest
+result never trades. Then it starts the market feed, the demo engine, the
+optional testnet worker and a FastAPI app that streams the engine snapshot over
+Server-Sent Events every second, and opens the dashboard in your browser.
 
   --fake-market   development only: made-up prices, so the page can be worked on
                   without network. Uses data/dev.db and says FAKE PRICES everywhere.
+  --no-browser    do not open the browser
   --host / --port default 127.0.0.1:8000 (the STOP button has no login, so the
                   dashboard only listens on this computer unless you change --host)
 
@@ -16,11 +20,13 @@ import json
 import os
 import sys
 import threading
+import time
+import webbrowser
 
 from . import env, strategies
 from .alerts import Alerts
 from .db import Store
-from .engine import Engine, load_backtest, sse
+from .engine import BACKTEST_FILE, Engine, load_backtest, sse
 from .exchange import BinanceSpot
 from .market import CandleStore, MarketFeed
 
@@ -45,6 +51,15 @@ def create_app(engine):
     @app.get("/api/history")
     def history():
         return engine.history()
+
+    @app.get("/api/backtest")
+    def backtest():
+        try:
+            with open(BACKTEST_FILE) as f:
+                rep = json.load(f)
+        except (OSError, ValueError):
+            return {}
+        return {k: rep.get(k) for k in ("generated_utc", "strategies", "hold")}
 
     @app.get("/api/stream")
     async def stream(request: Request):
@@ -71,10 +86,35 @@ def create_app(engine):
     return app
 
 
+def wired_strategies(cfg, backtest):
+    """Strategies listed in engine.strategies that also have a backtest result.
+    SPEC: no strategy trades in demo before it has been through the backtest."""
+    wanted = [s for s in strategies.build(cfg) if s.name in cfg["engine"]["strategies"]]
+    return [s for s in wanted if s.name in backtest], [s.name for s in wanted if s.name not in backtest]
+
+
+def ensure_backtest(cfg):
+    """First launch: run the backtest before any strategy trades in demo."""
+    backtest = load_backtest()
+    if all(n in backtest for n in cfg["engine"]["strategies"]):
+        return backtest
+    print("First launch: running the backtest before any strategy trades in demo (about a minute)...")
+    try:
+        import backtest_strategies
+        backtest_strategies.run_and_save()
+    except Exception as e:
+        print(f"Backtest could not run ({str(e)[:120]}). Strategies without a result stay out of demo; "
+              "run python3 backtest_strategies.py when the data API is reachable, then restart.")
+    return load_backtest()
+
+
 def build(args):
     cfg = json.load(open("config.json"))
     ecfg = cfg["engine"]
-    wired = [s for s in strategies.build(cfg) if s.name in ecfg["strategies"]]
+    backtest = ensure_backtest(cfg) if not args.fake_market else load_backtest()
+    wired, held = wired_strategies(cfg, backtest)
+    for name in held:
+        print(f"{name}: not trading in demo yet, it has no backtest result")
     alerts = Alerts(enabled=None)
     if args.fake_market:
         from .devmarket import FakeFeed, FakePublic
@@ -110,7 +150,7 @@ def build(args):
                 store.add_event(job["account"], "testnet", what)
             worker = TestnetWorker(TestnetTrader(adapter, gate, store), gate, on_result)
 
-    engine = Engine(cfg, store, feed, CandleStore(public), public, wired, backtest=load_backtest(),
+    engine = Engine(cfg, store, feed, CandleStore(public), public, wired, backtest=backtest,
                     testnet=worker, gate=gate, alerts=alerts, market_label=label)
     return engine, feed, worker
 
@@ -120,6 +160,7 @@ def main(argv=None):
     p.add_argument("--host", default=os.getenv("HOST", "127.0.0.1"))
     p.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
     p.add_argument("--fake-market", action="store_true", help="made-up prices for UI development")
+    p.add_argument("--no-browser", action="store_true", help="do not open the dashboard in a browser")
     args = p.parse_args(argv)
     env.load()
     try:
@@ -133,11 +174,14 @@ def main(argv=None):
     threading.Thread(target=engine.run_forever, args=(stop,), name="engine", daemon=True).start()
     if worker:
         threading.Thread(target=worker.run_forever, args=(stop,), name="testnet", daemon=True).start()
-    wired = ", ".join(engine.strategies) or "none yet (see engine.strategies in config.json)"
+    wired = ", ".join(engine.strategies) or "no strategies yet (they need a backtest result first)"
     print(f"crypto-bot demo engine: accounts HOLD_50_50 + {wired}")
     if engine.gate:
         print(engine.gate.message)
-    print(f"Dashboard: http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}")
+    url = f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}"
+    print(f"Dashboard: {url}   (Ctrl+C to stop)")
+    if not args.no_browser:
+        threading.Thread(target=lambda: (time.sleep(1.5), webbrowser.open(url)), daemon=True).start()
     try:
         uvicorn.run(create_app(engine), host=args.host, port=args.port, log_level="warning")
     finally:

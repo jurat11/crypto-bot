@@ -1,4 +1,6 @@
-# Only the dashboard needs these. run.py, backtest.py and backtest_strategies.py use the standard library.
+# The dashboard needs these. run.py, backtest.py and backtest_strategies.py also run on the standard library alone.
+# certifi: trusted certificates for python.org Python on macOS (otherwise HTTPS fails with CERTIFICATE_VERIFY_FAILED).
 fastapi>=0.110
 uvicorn>=0.29
 websockets>=13
+certifi

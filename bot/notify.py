@@ -5,6 +5,8 @@ import json
 import os
 import urllib.request
 
+from .net import ssl_context
+
 
 def send(text):
     token, chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
@@ -14,7 +16,7 @@ def send(text):
     req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", body,
                                  {"Content-Type": "application/json"})
     try:
-        urllib.request.urlopen(req, timeout=15)
+        urllib.request.urlopen(req, timeout=15, context=ssl_context())
         return True
     except Exception as e:
         print(f"telegram failed: {e}")

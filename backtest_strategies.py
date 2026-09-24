@@ -233,19 +233,15 @@ def table(report):
     return "\n".join([head, ""] + lines + [""] + why)
 
 
-def main():
+def run_and_save(offline=False):
+    """Download/refresh candles, run the backtest, save RESULTS, print the table. Returns the report."""
     cfg = json.load(open("config.json"))
-    offline = "--offline" in sys.argv
     hist = {}
     for a in strategies.SLEEVES:
         print(f"Loading {a}USDT hourly candles{' (cache only)' if offline else ''}...", file=sys.stderr)
-        try:
-            hist[a] = hourly(f"{a}USDT", offline)
-        except OSError as e:
-            sys.exit(f"Could not download candles from data-api.binance.vision ({e}). "
-                     "Run this on a network that can reach it, or use --offline with a filled data/cache/.")
+        hist[a] = hourly(f"{a}USDT", offline)  # OSError when the data API is unreachable
         if not hist[a]:
-            sys.exit(f"No cached {a}USDT candles in {CACHE}/. Run once without --offline.")
+            raise OSError(f"no cached {a}USDT candles in {CACHE}/")
         print(f"  {a}: {len(hist[a]):,} candles, {day(hist[a][0][0])} to {day(hist[a][-1][0] + H)}", file=sys.stderr)
     report = run(hist, cfg)
     report["generated_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -255,6 +251,15 @@ def main():
         json.dump(report, f, indent=1)
     print(table(report))
     print(f"\nSaved {RESULTS}. The dashboard reads the verdicts from it. Past results do not predict future ones.")
+    return report
+
+
+def main():
+    try:
+        run_and_save(offline="--offline" in sys.argv)
+    except OSError as e:
+        sys.exit(f"Could not load candles ({e}). Run this on a network that can reach data-api.binance.vision, "
+                 "or use --offline with a filled data/cache/.")
 
 
 if __name__ == "__main__":

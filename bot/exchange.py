@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
+from .net import ssl_context
+
 PUBLIC_BASE = "https://data-api.binance.vision/api"
 TESTNET_BASE = "https://testnet.binance.vision/api"
 UA = "crypto-bot/2.0"
@@ -162,7 +164,7 @@ def urllib_transport(method, url, headers, body=None, timeout=10):
     """Returns (status, bytes). HTTP errors are returned, not raised."""
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()

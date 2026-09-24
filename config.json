@@ -20,7 +20,7 @@
   "engine": {
     "start_cash": 15.0,
     "fee_rate": 0.001,
-    "strategies": [],
+    "strategies": ["TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1"],
     "testnet_strategy": "TREND_D1",
     "apply_exchange_filters": true,
     "rest_poll_seconds": 5,

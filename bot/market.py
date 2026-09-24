@@ -15,6 +15,7 @@ import threading
 import time
 
 from .candles import INTERVAL_MS, closed, last_close_ms
+from .net import ssl_context
 
 WS_URL = "wss://data-stream.binance.vision/ws"
 WS_QUIET_S = 10
@@ -126,7 +127,7 @@ class MarketFeed:
         while not self._stop.is_set():
             try:
                 with connect(self.ws_url, open_timeout=10, ping_interval=20, ping_timeout=20,
-                             max_size=2 ** 20) as ws:
+                             max_size=2 ** 20, ssl=ssl_context()) as ws:
                     ws.send(json.dumps({"method": "SUBSCRIBE", "params": streams, "id": 1}))
                     self.ws_state = "connected"
                     self.log("websocket connected")
