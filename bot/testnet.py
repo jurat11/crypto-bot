@@ -17,6 +17,7 @@ Manual check (Done item 2), with TESTNET=1 and keys in .env:
   python3 -m bot.testnet --status
   python3 -m bot.testnet --roundtrip        # ~$15 BTC buy, then sell it back
 """
+import queue
 import sys
 import time
 
@@ -189,6 +190,36 @@ class TestnetTrader:
         return self._record(account, asset, side, "filled", note.strip("; "), qty=o["qty"], price=avg,
                             notional=o["quote"], fee=fee_usd, mid=mid, slippage_bps=real_slip,
                             sim_slippage_bps=sim["slippage_bps"], client_order_id=cid)
+
+
+class TestnetWorker:
+    """Sends testnet orders from its own thread, so demo trading never waits on testnet."""
+
+    def __init__(self, trader, gate, on_result=None):
+        self.trader, self.gate = trader, gate
+        self.on_result = on_result or (lambda job, result: None)
+        self._q = queue.Queue()
+
+    def submit(self, **job):
+        if self.gate.status not in ("off", "no_keys"):
+            self._q.put(job)
+
+    def run_once(self, timeout=5.0):
+        try:
+            job = self._q.get(timeout=timeout)
+        except queue.Empty:
+            self.gate.usable()  # only touches the network when a scheduled re-check is due
+            return None
+        result = self.trader.mirror(**job)
+        self.on_result(job, result)
+        return result
+
+    def run_forever(self, stop):
+        while not stop.is_set():
+            try:
+                self.run_once()
+            except Exception as e:  # never let testnet take anything else down
+                self.gate.mark_error(e)
 
 
 def make_adapter():

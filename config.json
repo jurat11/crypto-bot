@@ -16,5 +16,22 @@
     "max_drawdown_halt_pct": 0.35,
     "max_trades_per_run": 4,
     "max_data_age_hours": 30
+  },
+  "engine": {
+    "start_cash": 15.0,
+    "fee_rate": 0.001,
+    "strategies": [],
+    "testnet_strategy": "TREND_D1",
+    "apply_exchange_filters": true,
+    "rest_poll_seconds": 5,
+    "decision_delay_seconds": 5,
+    "order_retry_minutes": 10,
+    "risk": {
+      "max_weight_per_asset": 0.5,
+      "max_daily_loss_pct": 0.08,
+      "max_drawdown_halt_pct": 0.35,
+      "max_trades_per_run": 4,
+      "max_data_age_hours": 0.05
+    }
   }
 }
