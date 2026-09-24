@@ -80,6 +80,7 @@ class Engine:
         self.risk_state = {}
         self.last_minute = None
         self.first_try = {}
+        self.waiting_logged = False
         self._snap = (None, None)
         self.accounts = self._load_accounts()
 
@@ -116,9 +117,8 @@ class Engine:
     # ---------- main loop ----------
     def tick(self):
         minute = int((self.clock() * 1000 - self.delay_ms) // 60_000)
-        if minute != self.last_minute:
-            self.last_minute = minute
-            self.on_minute()
+        if minute != self.last_minute and self.on_minute():
+            self.last_minute = minute  # until prices arrive, try again every second
 
     def run_forever(self, stop):
         last_err = ""
@@ -137,8 +137,11 @@ class Engine:
             now = self.now_ms()
             prices = self.prices()
             if any(p is None for p in prices.values()):
-                self.event("engine", "check", f"waiting for live prices (feed: {self.feed.status})")
-                return
+                if not self.waiting_logged:
+                    self.event("engine", "check", f"waiting for live prices (feed: {self.feed.status})")
+                    self.waiting_logged = True
+                return False
+            self.waiting_logged = False
             self.fund_hold(prices, now)
             points = {}
             for name, a in self.accounts.items():
@@ -148,14 +151,19 @@ class Engine:
             self.store.add_equity(now // 60_000 * 60_000, points)
             blocked = {n: self.check_risk(a, prices, now) for n, a in self.accounts.items()}
             bad = {n: r for n, r in blocked.items() if r}
-            text = (f"marked {len(points)} accounts at BTC {prices['BTC']:,.2f} / ETH {prices['ETH']:,.2f}; "
-                    + ("risk OK for all" if not bad else
-                       "risk BLOCKED for " + ", ".join(f"{n} ({'; '.join(r)})" for n, r in bad.items())))
+            if not bad:
+                risk_text = "risk OK for all"
+            elif len(bad) == len(blocked) and len({tuple(r) for r in bad.values()}) == 1:
+                risk_text = "risk BLOCKED for all: " + "; ".join(next(iter(bad.values())))
+            else:
+                risk_text = "risk BLOCKED for " + ", ".join(f"{n} ({'; '.join(r)})" for n, r in bad.items())
+            text = f"marked {len(points)} accounts at BTC {prices['BTC']:,.2f} / ETH {prices['ETH']:,.2f}; {risk_text}"
             self.event("engine", "check", text)
             for name, strat in self.strategies.items():
                 self.maybe_decide(strat, self.accounts[name], now)
             self.save()
             self.alerts.maybe_daily(now, self.leaderboard(prices))
+            return True
 
     # ---------- risk ----------
     def check_risk(self, acct, prices, now, orders=()):

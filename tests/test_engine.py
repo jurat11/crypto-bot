@@ -139,6 +139,18 @@ class Accounts(EngineCase):
         fills = [f for f in self.store.recent_fills() if f["account"] == HOLD]
         self.assertEqual({f["venue"] for f in fills}, {"demo"})
 
+    def test_starts_within_a_second_of_the_first_price(self):
+        self.feed = MarketFeed(["BTCUSDT", "ETHUSDT"], self.public, clock=self.clock)  # no prices yet
+        eng = self.engine()
+        eng.tick()
+        eng.tick()
+        self.assertFalse(eng.accounts[HOLD].s["funded"])
+        self.assertEqual(sum(1 for e in self.store.recent_events() if "waiting for live prices" in e["text"]), 1)
+        self.feed.poll_once()
+        self.clock.t += 1
+        eng.tick()
+        self.assertTrue(eng.accounts[HOLD].s["funded"])
+
     def test_state_survives_restart(self):
         eng = self.engine()
         eng.tick()

@@ -215,6 +215,7 @@ class TestnetWorker:
         return result
 
     def run_forever(self, stop):
+        self.gate.usable()  # first check right away so the dashboard shows the real status
         while not stop.is_set():
             try:
                 self.run_once()

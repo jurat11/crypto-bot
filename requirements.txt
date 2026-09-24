@@ -1,0 +1,4 @@
+# Only the dashboard needs these. run.py, backtest.py and backtest_strategies.py use the standard library.
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=13
