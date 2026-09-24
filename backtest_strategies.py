@@ -13,7 +13,8 @@ timeframe (the same decide() code the live engine uses), trades at that candle's
 marked to market every hour.
 
 Verdict: a strategy that loses money out of sample at either fee is marked FAILED BACKTEST.
-It still runs in demo, and the dashboard shows the flag.
+It still runs in demo, and the dashboard shows the flag. Coins listed after 2022 (PEPE, ...)
+have no in-sample period; they are judged on 2023+ alone and the table says "n/a" in-sample.
 """
 import csv
 import json
@@ -148,15 +149,19 @@ def sleeve(path, fee):
 
 
 def combine(curves, weights, t0, t1):
+    """Portfolio value: each coin's sleeve plus whatever share of the account stays in cash."""
     keys = sorted(set.intersection(*[set(c) for c in curves.values()]))
     keys = [k for k in keys if t0 <= k < t1]
     if not keys:
         return []
     base = {a: curves[a][keys[0]] for a in curves}
-    return [(k, sum(weights[a] * curves[a][k] / base[a] for a in curves)) for k in keys]
+    cash = 1.0 - sum(weights[a] for a in curves)
+    return [(k, cash + sum(weights[a] * curves[a][k] / base[a] for a in curves)) for k in keys]
 
 
 def stats(series):
+    if len(series) < 2:
+        return {"return": None, "cagr": None, "max_dd": None, "start": None, "end": None}
     peak, mdd = 0.0, 0.0
     for _, e in series:
         peak = max(peak, e)
@@ -200,13 +205,17 @@ def evaluate(paths, weights, fee, periods):
         exp_sum = sum(e for a, p in paths.items() for (t, _, e) in p if t0 <= t < t1)
         n = sum(1 for a, p in paths.items() for (t, _, _) in p if t0 <= t < t1)
         st["time_invested"] = exp_sum / n if n else 0.0
-        if name == "oos":
+        if name == "oos" and series:
             st["horizons"] = horizons(series)
         out[name] = st
     return out
 
 
-def verdict(results):
+def verdict(results, benchmark=False):
+    if benchmark:
+        return "BENCHMARK", "buys at the start and holds; here to compare against"
+    if any(r["oos"]["return"] is None for r in results.values()):
+        return "NOT ENOUGH DATA", "no out-of-sample prices for these coins yet"
     losses = [f"{float(fee):.1%}" for fee, r in results.items() if r["oos"]["return"] <= 0]
     if losses:
         return "FAILED BACKTEST", f"lost money out of sample at {' and '.join(losses)} fee"
@@ -215,14 +224,18 @@ def verdict(results):
 
 def run(hist, cfg, periods=None):
     periods = periods or {"is": (ms(IS[0]), ms(IS[1])), "oos": (ms(OOS[0]), ms(OOS[1]))}
-    weights = strategies.SLEEVES
     report = {"strategies": {}}
     for s in strategies.build(cfg):
+        weights = s.sleeves
+        if not all(hist.get(a) for a in weights):
+            continue  # no price history for a coin (run_and_save loads every coin the config uses)
         paths = {a: exposure_path(s, a, hist[a]) for a in weights}
         res = {str(fee): evaluate(paths, weights, fee, periods) for fee in FEES}
-        v, why = verdict(res)
+        v, why = verdict(res, getattr(s, "benchmark", False))
         report["strategies"][s.name] = {"verdict": v, "why": why, "rule": s.rule, "results": res,
-                                        "demo_fee": str(getattr(s, "fee_rate", FEES[0]))}
+                                        "demo_fee": str(getattr(s, "fee_rate", FEES[0])),
+                                        "coins": list(weights), "group": getattr(s, "group", "BTC & ETH")}
+    weights = strategies.SLEEVES
     hold = {a: [(r[0] + H, r[4], 1.0) for r in hist[a]] for a in weights}
     report["hold"] = evaluate(hold, weights, 0.0, periods)
     return report
@@ -241,15 +254,18 @@ def table(report):
     for name, s in report["strategies"].items():
         for fee, r in s["results"].items():
             i, o = r["is"], r["oos"]
-            lines.append(f"| {name} | {float(fee):.1%} | {pct(i['cagr'])} | {pct(i['max_dd'], 0)} | {pct(o['cagr'])} | "
+            coins = s.get("coins", ["BTC", "ETH"])
+            name_cell = name if coins == ["BTC", "ETH"] else f"{name} ({', '.join(coins)})"
+            lines.append(f"| {name_cell} | {float(fee):.1%} | {pct(i['cagr'])} | {pct(i['max_dd'], 0)} | {pct(o['cagr'])} | "
                          f"{pct(o['return'])} | {pct(o['max_dd'], 0)} | {o['trades']} | {pct(o['win_rate'], 0)} | "
                          f"{s['verdict'] if fee == str(FEES[0]) else ''} |")
     i, o = report["hold"]["is"], report["hold"]["oos"]
     lines.append(f"| Hold 50/50 BTC/ETH | none | {pct(i['cagr'])} | {pct(i['max_dd'], 0)} | {pct(o['cagr'])} | "
                  f"{pct(o['return'])} | {pct(o['max_dd'], 0)} | 0 | n/a | benchmark |")
-    head = (f"In-sample {report['hold']['is']['start']} to {report['hold']['is']['end']}, "
-            f"out-of-sample {report['hold']['oos']['start']} to {oos_end}. 50% BTC / 50% ETH sleeves, "
-            f"hourly marks. Trades count every buy or sell (both coins).")
+    head = (f"In-sample {report['hold']['is']['start']} to {report['hold']['is']['end']} (coins listed later start "
+            f"when they were listed), "
+            f"out-of-sample {report['hold']['oos']['start']} to {oos_end}. Each strategy on its own coins "
+            f"(50% of the account per coin, the rest in cash), hourly marks. Trades count every buy or sell.")
     why = [f"- {n}: {s['verdict']} ({s['why']})" for n, s in report["strategies"].items()]
     return "\n".join([head, ""] + lines + [""] + why)
 
@@ -258,7 +274,10 @@ def run_and_save(offline=False):
     """Download/refresh candles, run the backtest, save RESULTS, print the table. Returns the report."""
     cfg = json.load(open("config.json"))
     hist = {}
-    for a in strategies.SLEEVES:
+    coins = list(strategies.SLEEVES)
+    for s in strategies.build(cfg):
+        coins += [a for a in s.sleeves if a not in coins]
+    for a in coins:
         print(f"Loading {a}USDT hourly candles{' (cache only)' if offline else ''}...", file=sys.stderr)
         hist[a] = hourly(f"{a}USDT", offline)  # OSError when the data API is unreachable
         if not hist[a]:

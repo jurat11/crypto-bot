@@ -6,21 +6,21 @@ the live mid price, and every fee already paid is out of the balance.
 """
 import time
 
-ASSETS = ("BTC", "ETH")
+ASSETS = ("BTC", "ETH")  # the original sleeves; an account can hold any coins
 
 
 def utc_day(ms):
     return time.strftime("%Y-%m-%d", time.gmtime(ms / 1000))
 
 
-def new_state(name, start_cash, now_ms):
+def new_state(name, start_cash, now_ms, assets=ASSETS):
     return {
         "name": name, "start_cash": start_cash, "started_ms": now_ms,
-        "cash": start_cash, "holdings": {a: 0.0 for a in ASSETS}, "cost": {a: 0.0 for a in ASSETS},
+        "cash": start_cash, "holdings": {a: 0.0 for a in assets}, "cost": {a: 0.0 for a in assets},
         "fees": 0.0, "trades": 0, "sells": 0, "wins": 0,
         "peak_equity": start_cash, "max_dd": 0.0, "last_equity": start_cash,
         "day": utc_day(now_ms), "day_start_equity": start_cash,
-        "pos": {a: {} for a in ASSETS}, "info": {a: {} for a in ASSETS},
+        "pos": {a: {} for a in assets}, "info": {a: {} for a in assets},
         "decided_ms": 0, "funded": False,
     }
 
@@ -30,8 +30,23 @@ class Account:
         self.s = state
 
     @classmethod
-    def create(cls, name, start_cash, now_ms):
-        return cls(new_state(name, start_cash, now_ms))
+    def create(cls, name, start_cash, now_ms, assets=ASSETS):
+        return cls(new_state(name, start_cash, now_ms, assets))
+
+    def ensure_assets(self, assets):
+        """Accounts saved before a coin was added get empty entries for it."""
+        for a in assets:
+            self.s["holdings"].setdefault(a, 0.0)
+            self.s["cost"].setdefault(a, 0.0)
+            self.s["pos"].setdefault(a, {})
+            self.s["info"].setdefault(a, {})
+
+    @property
+    def assets(self):
+        return list(self.s["holdings"])
+
+    def coins_in_use(self, sleeves):
+        return set(sleeves) | {a for a, q in self.s["holdings"].items() if q > 0}
 
     @property
     def name(self):
@@ -41,11 +56,11 @@ class Account:
         return self.s["holdings"].get(asset, 0.0) * (prices.get(asset) or 0.0)
 
     def equity(self, prices):
-        return self.s["cash"] + sum(self.value(a, prices) for a in ASSETS)
+        return self.s["cash"] + sum(self.value(a, prices) for a in self.s["holdings"])
 
     def weights(self, prices):
         eq = self.equity(prices)
-        return {a: self.value(a, prices) / eq if eq else 0.0 for a in ASSETS}
+        return {a: self.value(a, prices) / eq if eq else 0.0 for a in self.s["holdings"]}
 
     def apply_buy(self, asset, sim):
         """sim from orderbook.simulate_market_order (BUY)."""
@@ -91,7 +106,7 @@ class Account:
         peak = max(s["peak_equity"], eq)
         return {
             "account": s["name"], "balance": eq, "cash": s["cash"],
-            "holdings_usd": {a: self.value(a, prices) for a in ASSETS},
+            "holdings_usd": {a: self.value(a, prices) for a in self.s["holdings"]},
             "pnl_usd": eq - s["start_cash"], "pnl_pct": eq / s["start_cash"] - 1,
             "max_dd": max(s["max_dd"], 1 - eq / peak if peak else 0.0),
             "trades": s["trades"], "win_rate": s["wins"] / s["sells"] if s["sells"] else None,

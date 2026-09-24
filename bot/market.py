@@ -74,9 +74,9 @@ class MarketFeed:
     def mid(self, symbol):
         return self.quote(symbol)["mid"]
 
-    def age_s(self):
-        """Age of the stalest symbol; infinity before the first price arrives."""
-        ages = [self.quote(s)["age_s"] for s in self.symbols]
+    def age_s(self, symbols=None):
+        """Age of the stalest of these symbols (default: all); infinity before the first price."""
+        ages = [self.quote(s)["age_s"] for s in (symbols or self.symbols)]
         return float("inf") if any(a is None for a in ages) else max(ages)
 
     @property

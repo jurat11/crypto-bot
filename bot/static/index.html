@@ -85,7 +85,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .px-name { color: var(--ink-2); font-weight: 600; }
 .px-val { font-size: 28px; font-weight: 650; letter-spacing: -0.01em; }
 .px-meta { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
-.chart-box { position: relative; height: 340px; }
+.chart-box { position: relative; height: 260px; }
+.chart-grp + .chart-grp { margin-top: 18px; }
+.chart-grp h3 { font-size: 13px; margin: 0 0 6px; font-weight: 650; }
+tr.grp td { background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 8px; }
+.px-table td { padding: 5px 6px; }
+.px-table .coin { font-weight: 650; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
 .state { padding: 10px 0; border-bottom: 1px solid var(--grid); }
 .state:last-child { border-bottom: 0; }
@@ -143,9 +148,11 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
   <div class="grid g-2">
     <section class="card">
       <h2>P&amp;L since start, % (accounts start with $15 or $20)</h2>
-      <div class="legend" id="legend"></div>
-      <div class="chart-box"><canvas id="chart" role="img" aria-label="Profit or loss of every demo account since its start, in percent; the leaderboard above has the same numbers as a table"></canvas></div>
-      <div class="sub" id="chart-note">One point per minute; the last point moves every second.</div>
+      <div class="chart-grp"><h3>BTC &amp; ETH</h3><div class="legend" id="legend-0"></div>
+        <div class="chart-box"><canvas id="chart-0" role="img" aria-label="Profit or loss of the BTC and ETH accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
+      <div class="chart-grp"><h3>More coins: altcoins, memecoins, gold</h3><div class="legend" id="legend-1"></div>
+        <div class="chart-box"><canvas id="chart-1" role="img" aria-label="Profit or loss of the altcoin, memecoin and gold accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
+      <div class="sub" id="chart-note">One point per minute; the last point moves every second. Colours are per chart.</div>
     </section>
     <section class="card">
       <h2>Live prices</h2>
@@ -216,7 +223,19 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
 const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
                D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const GROUPS = ["BTC & ETH", "More coins"];
+const groupOf = {};  // account -> group, filled from the stream and the history
+function noteGroups(pairs) {
+  for (const [acct, grp] of pairs) {
+    groupOf[acct] = grp || "BTC & ETH";
+    if (SLOT[acct]) continue;
+    const used = new Set(Object.entries(SLOT).filter(([a]) => (groupOf[a] || "BTC & ETH") === groupOf[acct]).map(([, v]) => v));
+    const free = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `--s${i}`).find((v) => !used.has(v));
+    SLOT[acct] = free || "--muted";  // past 8 series a chart folds to grey instead of inventing a colour
+  }
+}
 const colorOf = (acct) => css(SLOT[acct] || "--muted");
+const chartIndex = (acct) => Math.max(0, GROUPS.indexOf(groupOf[acct] || "BTC & ETH"));
 const $ = (id) => document.getElementById(id);
 
 function el(tag, attrs, ...kids) {
@@ -230,48 +249,66 @@ function el(tag, attrs, ...kids) {
 const fmtUsd = (x, d = 2) => x == null ? "–" : (x < 0 ? "-$" : "$") + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtSigned = (x, d = 4) => x == null ? "–" : (x >= 0 ? "+" : "-") + "$" + Math.abs(x).toFixed(d);
 const fmtPct = (x, d = 2, sign = false) => x == null ? "–" : (sign && x >= 0 ? "+" : "") + (x * 100).toFixed(d) + "%";
-const fmtPx = (x) => x == null ? "–" : x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPx = (x) => {
+  if (x == null) return "–";
+  if (x >= 100) return x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (x >= 1) return x.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return (+x.toPrecision(6)).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");  // 6 significant digits
+};
+const fmtQty = (q) => q == null ? "–" : q >= 1000 ? Math.round(q).toLocaleString("en-US")
+  : q >= 1 ? String(+q.toPrecision(8)) : q.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 const utc = (ms, secs = true) => { const d = new Date(ms); return d.toISOString().slice(11, secs ? 19 : 16); };
 const utcDay = (ms) => new Date(ms).toISOString().slice(5, 10);
 const sgnClass = (x) => x > 0 ? "pos" : x < 0 ? "neg" : "";
 
 // ---------- leaderboard ----------
 const prevBal = {};
-function renderBoard(rows) {
+function renderBoard(allRows) {
   const tb = $("board").tBodies[0];
-  if (!rows.length) return;
-  tb.replaceChildren(...rows.map((r, i) => {
-    const bal = el("span", { class: "bal" }, fmtUsd(r.balance, 4));
-    const p = prevBal[r.account];
-    if (p !== undefined && Math.abs(r.balance - p) > 1e-9) {
-      bal.classList.add(r.balance > p ? "up" : "down");
-      requestAnimationFrame(() => setTimeout(() => bal.classList.remove("up", "down"), 60));
-    }
-    prevBal[r.account] = r.balance;
-    const badges = [];
-    if (r.backtest === "FAILED BACKTEST") badges.push(el("span", { class: "badge fail", title: r.backtest_why }, "FAILED BACKTEST"));
-    else if (r.backtest === "PASSED") badges.push(el("span", { class: "badge pass", title: r.backtest_why }, "backtest passed"));
-    else if (r.backtest === "NOT BACKTESTED") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not backtested"));
-    else if (r.backtest === "BENCHMARK") badges.push(el("span", { class: "badge", title: r.backtest_why }, "benchmark"));
-    if (r.testnet) badges.push(el("span", { class: "badge tn", title: "this strategy's orders are also sent to Binance Spot Testnet" }, "TESTNET"));
-    const hold = r.holdings_usd || {};
-    const acct = el("td", {},
-      el("span", { class: "key", style: `background:${colorOf(r.account)}` }),
-      el("span", { class: "acct" }, r.label), ...badges,
-      el("div", { class: "sub", style: "margin-left:22px" },
-        `${r.timeframe ? r.timeframe + " · " : ""}started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)} · cash ${fmtUsd(r.cash)} · BTC ${fmtUsd(hold.BTC)} · ETH ${fmtUsd(hold.ETH)}`),
-      r.note ? el("div", { class: "sub", style: "margin-left:22px" }, r.note) : null);
-    acct.title = r.rule || "";
-    return el("tr", {},
-      el("td", { class: "num" }, i + 1), acct,
-      el("td", { class: "num" }, bal),
-      el("td", { class: "num " + sgnClass(r.pnl_usd) }, fmtSigned(r.pnl_usd)),
-      el("td", { class: "num " + sgnClass(r.pnl_pct) }, fmtPct(r.pnl_pct, 2, true)),
-      el("td", { class: "num" }, fmtPct(r.max_dd, 2)),
-      el("td", { class: "num" }, r.trades),
-      el("td", { class: "num" }, r.win_rate == null ? "–" : fmtPct(r.win_rate, 0)),
-      el("td", { class: "num" }, fmtUsd(r.fees, 4)));
-  }));
+  if (!allRows.length) return;
+  noteGroups(allRows.map((r) => [r.account, r.group]));
+  const out = [];
+  for (const grp of GROUPS.concat([...new Set(allRows.map((r) => r.group))].filter((g) => !GROUPS.includes(g)))) {
+    const rows = allRows.filter((r) => (r.group || "BTC & ETH") === grp);
+    if (!rows.length) continue;
+    out.push(el("tr", { class: "grp" }, el("td", { colspan: 9 }, grp === "BTC & ETH" ? "BTC & ETH" : grp + ": altcoins, memecoins, gold")));
+    out.push(...rows.map((r, i) => boardRow(r, i)));
+  }
+  tb.replaceChildren(...out);
+}
+function boardRow(r, i) {
+  const bal = el("span", { class: "bal" }, fmtUsd(r.balance, 4));
+  const p = prevBal[r.account];
+  if (p !== undefined && Math.abs(r.balance - p) > 1e-9) {
+    bal.classList.add(r.balance > p ? "up" : "down");
+    requestAnimationFrame(() => setTimeout(() => bal.classList.remove("up", "down"), 60));
+  }
+  prevBal[r.account] = r.balance;
+  const badges = [];
+  if (r.backtest === "FAILED BACKTEST") badges.push(el("span", { class: "badge fail", title: r.backtest_why }, "FAILED BACKTEST"));
+  else if (r.backtest === "PASSED") badges.push(el("span", { class: "badge pass", title: r.backtest_why }, "backtest passed"));
+  else if (r.backtest === "NOT BACKTESTED") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not backtested"));
+  else if (r.backtest === "BENCHMARK") badges.push(el("span", { class: "badge", title: r.backtest_why }, "benchmark"));
+  else if (r.backtest === "NOT ENOUGH DATA") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not enough data"));
+  if (r.testnet) badges.push(el("span", { class: "badge tn", title: "this strategy's orders are also sent to Binance Spot Testnet" }, "TESTNET"));
+  const hold = r.holdings_usd || {};
+  const coins = (r.coins || Object.keys(hold)).map((c) => `${c} ${fmtUsd(hold[c])}`).join(" · ");
+  const acct = el("td", {},
+    el("span", { class: "key", style: `background:${colorOf(r.account)}` }),
+    el("span", { class: "acct" }, r.label), ...badges,
+    el("div", { class: "sub", style: "margin-left:22px" },
+      `${r.timeframe ? r.timeframe + " · " : ""}started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)} · cash ${fmtUsd(r.cash)} · ${coins}`),
+    r.note ? el("div", { class: "sub", style: "margin-left:22px" }, r.note) : null);
+  acct.title = r.rule || "";
+  return el("tr", {},
+    el("td", { class: "num" }, i + 1), acct,
+    el("td", { class: "num" }, bal),
+    el("td", { class: "num " + sgnClass(r.pnl_usd) }, fmtSigned(r.pnl_usd)),
+    el("td", { class: "num " + sgnClass(r.pnl_pct) }, fmtPct(r.pnl_pct, 2, true)),
+    el("td", { class: "num" }, fmtPct(r.max_dd, 2)),
+    el("td", { class: "num" }, r.trades),
+    el("td", { class: "num" }, r.win_rate == null ? "–" : fmtPct(r.win_rate, 0)),
+    el("td", { class: "num" }, fmtUsd(r.fees, 4)));
 }
 
 // ---------- banners ----------
@@ -291,15 +328,25 @@ function renderBanners(s) {
 // ---------- prices ----------
 function renderPrices(m) {
   const lab = m.label ? " (FAKE)" : "";
-  $("prices").replaceChildren(...["BTC", "ETH"].map((a) => {
+  const coins = m.coins || ["BTC", "ETH"];
+  const big = coins.slice(0, 2).map((a) => {
     const q = m[a] || {};
     return el("div", {},
       el("div", { class: "px-name" }, `${a}/USDT${lab}`),
       el("div", { class: "px-val" }, fmtPx(q.price)),
-      el("div", { class: "px-meta" }, `bid ${fmtPx(q.bid)} · ask ${fmtPx(q.ask)}`),
-      el("div", { class: "px-meta" }, `spread ${q.spread == null ? "–" : "$" + q.spread.toFixed(2)} (${q.spread_bps == null ? "–" : q.spread_bps.toFixed(2) + " bp"})`),
+      el("div", { class: "px-meta" }, `bid ${fmtPx(q.bid)} · ask ${fmtPx(q.ask)} · spread ${q.spread_bps == null ? "–" : q.spread_bps.toFixed(2) + " bp"}`),
       el("div", { class: "px-meta" }, `${q.source || "no data"} · ${q.age_s == null ? "–" : q.age_s.toFixed(1) + " s ago"}`));
-  }));
+  });
+  const rest = coins.slice(2);
+  const table = rest.length ? el("table", { class: "px-table" },
+    el("thead", {}, el("tr", {}, el("th", {}, "Coin"), el("th", { class: "num" }, "Price" + lab), el("th", { class: "num" }, "Spread"), el("th", { class: "num" }, "Age"))),
+    el("tbody", {}, ...rest.map((a) => {
+      const q = m[a] || {};
+      return el("tr", {}, el("td", { class: "coin" }, a), el("td", { class: "num" }, fmtPx(q.price)),
+        el("td", { class: "num" }, q.spread_bps == null ? "–" : q.spread_bps.toFixed(1) + " bp"),
+        el("td", { class: "num" }, q.age_s == null ? "–" : q.age_s.toFixed(0) + " s"));
+    }))) : null;
+  $("prices").replaceChildren(...big, ...(table ? [table] : []));
   $("feed-status").textContent = `Price feed: ${m.status}. Binance public data (data-api.binance.vision), mid = (bid + ask) / 2.`;
 }
 
@@ -351,7 +398,7 @@ function renderFills(fills) {
       el("td", {}, el("span", { class: "badge " + (tn ? "tn" : ""), style: "margin-left:0" }, tn ? "TESTNET" : "DEMO")),
       el("td", {}, f.account),
       el("td", { style: "white-space:nowrap" }, `${f.side} ${f.asset}`),
-      el("td", { class: "num" }, f.qty == null ? "–" : f.qty.toFixed(6)),
+      el("td", { class: "num" }, fmtQty(f.qty)),
       el("td", { class: "num" }, f.price == null ? "–" : fmtPx(f.price) + (tn ? " TESTNET" : "")),
       el("td", { class: "num" }, f.notional == null ? "–" : fmtUsd(f.notional)),
       el("td", { class: "num" }, f.fee == null ? "–" : fmtUsd(f.fee, 4)),
@@ -361,8 +408,8 @@ function renderFills(fills) {
   }));
 }
 
-// ---------- equity chart ----------
-let chart = null, history = null, labels = {}, starts = {};
+// ---------- P&L charts (one per group, at most 8 colours each) ----------
+let charts = [null, null], history = null, labels = {}, starts = {};
 const toPoint = (acct, x, bal) => ({ x, y: (bal / (starts[acct] || 15) - 1) * 100, bal });
 function datasetFor(acct, pts) {
   const c = colorOf(acct);
@@ -377,12 +424,9 @@ const crosshair = { id: "crosshair", afterDraw(c) {
   ctx.save(); ctx.strokeStyle = css("--axis"); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); ctx.restore();
 } };
-function buildChart() {
-  if (!window.Chart) { $("chart-note").textContent = "Chart.js could not load from the CDN. Every number above is still live."; return; }
-  const grid = css("--grid"), muted = css("--muted");
-  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-  Chart.defaults.color = muted;
-  chart = new Chart($("chart"), {
+function makeChart(canvas) {
+  const grid = css("--grid");
+  const ch = new Chart(canvas, {
     type: "line", data: { datasets: [] }, plugins: [crosshair],
     options: {
       animation: false, parsing: false, normalized: true, maintainAspectRatio: false,
@@ -400,8 +444,8 @@ function buildChart() {
       },
       scales: {
         x: { type: "linear", grid: { color: grid }, border: { color: css("--axis") },
-             ticks: { maxTicksLimit: 8, callback: (v) => {
-               const span = chart ? chart.scales.x.max - chart.scales.x.min : 0;
+             ticks: { maxTicksLimit: 8, callback: function (v) {
+               const span = this.max - this.min;  // `this` is the x scale (works during the first draw too)
                return span > 2 * 86400000 ? utcDay(v) : span < 15 * 60000 ? utc(v) : utc(v, false);
              } } },
         y: { grid: { color: grid }, border: { display: false }, ticks: { callback: (v, i, t) => {
@@ -413,31 +457,49 @@ function buildChart() {
       },
     },
   });
+  return ch;
+}
+function buildChart() {
+  if (!window.Chart) { $("chart-note").textContent = "Chart.js could not load from the CDN. Every number above is still live."; return; }
+  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  Chart.defaults.color = css("--muted");
+  charts = [makeChart($("chart-0")), makeChart($("chart-1"))];
 }
 function renderLegend() {
-  const accts = Object.keys(labels);
-  $("legend").replaceChildren(...accts.map((a) => el("span", {},
-    el("span", { class: "key", style: `background:${colorOf(a)}` }), labels[a])));
+  [0, 1].forEach((i) => {
+    const accts = Object.keys(labels).filter((a) => chartIndex(a) === i);
+    $("legend-" + i).replaceChildren(...accts.map((a) => el("span", {},
+      el("span", { class: "key", style: `background:${colorOf(a)}` }), labels[a])));
+    $("legend-" + i).parentElement.style.display = accts.length ? "" : "none";
+  });
 }
 async function loadHistory() {
   try {
     const h = await (await fetch("/api/history")).json();
-    labels = h.accounts; history = h.equity; starts = h.start || {}; renderLegend();
-    if (!chart) return;
-    chart.data.datasets = Object.keys(labels).map((a) => datasetFor(a, (history[a] || []).map(([x, bal]) => toPoint(a, x, bal))));
-    chart.update("none");
+    labels = h.accounts; history = h.equity; starts = h.start || {};
+    noteGroups(Object.entries(h.groups || {}));
+    renderLegend();
+    if (!charts[0]) return;
+    charts.forEach((ch, i) => {
+      ch.data.datasets = Object.keys(labels).filter((a) => chartIndex(a) === i)
+        .map((a) => datasetFor(a, (history[a] || []).map(([x, bal]) => toPoint(a, x, bal))));
+      ch.update("none");
+    });
   } catch (e) { /* the stream keeps the numbers live; retry on the next interval */ }
 }
 function liveChartPoint(snap) {
-  if (!chart || !snap.leaderboard.length) return;
+  if (!charts[0] || !snap.leaderboard.length) return;
+  const touched = new Set();
   for (const r of snap.leaderboard) {
-    let ds = chart.data.datasets.find((d) => d.account === r.account);
     starts[r.account] = r.start_cash;
-    if (!ds) { labels[r.account] = r.label; ds = datasetFor(r.account, []); chart.data.datasets.push(ds); renderLegend(); }
+    const ch = charts[chartIndex(r.account)];
+    let ds = ch.data.datasets.find((d) => d.account === r.account);
+    if (!ds) { labels[r.account] = r.label; ds = datasetFor(r.account, []); ch.data.datasets.push(ds); renderLegend(); }
     const pts = ds.data, last = pts[pts.length - 1], pt = toPoint(r.account, snap.ts, r.balance);
     if (last && last.live) Object.assign(last, pt); else pts.push({ ...pt, live: true });
+    touched.add(ch);
   }
-  chart.update("none");
+  touched.forEach((ch) => ch.update("none"));
 }
 
 // ---------- backtest table ----------
@@ -445,6 +507,7 @@ async function loadBacktest() {
   let rep = {};
   try { rep = await (await fetch("/api/backtest")).json(); } catch (e) { return; }
   const box = $("backtest");
+  noteGroups(Object.entries(rep.strategies || {}).map(([n, st]) => [n, st.group]));
   lastRep = rep; renderExpect();
   if (!rep.strategies) {
     $("expect").replaceChildren(el("div", { class: "empty" }, "Appears after the first backtest."));
@@ -456,9 +519,11 @@ async function loadBacktest() {
   const rows = [];
   for (const [name, st] of Object.entries(rep.strategies)) {
     Object.entries(st.results).forEach(([fee, r], i) => {
-      const verdict = i === 0 ? el("span", { class: "badge " + (st.verdict === "PASSED" ? "pass" : "fail"), style: "margin-left:0", title: st.why }, st.verdict) : "";
+      const cls = st.verdict === "PASSED" ? "pass" : st.verdict === "FAILED BACKTEST" ? "fail" : "";
+      const verdict = i === 0 ? el("span", { class: "badge " + cls, style: "margin-left:0", title: st.why }, st.verdict.toLowerCase() === "benchmark" ? "benchmark" : st.verdict) : "";
+      const coins = st.coins && st.coins.join(",") !== "BTC,ETH" ? ` (${st.coins.join(", ")})` : "";
       rows.push(el("tr", {},
-        el("td", {}, i === 0 ? el("span", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, name)) : ""),
+        el("td", {}, i === 0 ? el("span", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, name), coins) : ""),
         cell(fmtPct(+fee, 1)), cell(fmtPct(r.is.cagr, 1)), cell(fmtPct(r.is.max_dd, 0)),
         cell(fmtPct(r.oos.cagr, 1), true, sgnClass(r.oos.cagr)), cell(fmtPct(r.oos["return"], 1, true), true, sgnClass(r.oos["return"])),
         cell(fmtPct(r.oos.max_dd, 0)), cell(r.oos.trades), cell(r.oos.win_rate == null ? "–" : fmtPct(r.oos.win_rate, 0)),
@@ -502,7 +567,8 @@ function renderExpect() {
   for (const n of names) {
     const st = rep.strategies[n], b = board[n] || {};
     const fee = st.demo_fee || "0.001";
-    add(n, n, st.results[fee] || Object.values(st.results)[0], b.start_cash || 15);
+    const coins = st.coins && st.coins.join(",") !== "BTC,ETH" ? ` (${st.coins.join(", ")})` : "";
+    add(n, n + coins, st.results[fee] || Object.values(st.results)[0], b.start_cash || 15);
   }
   if (rep.hold) add("HOLD_50_50", "Hold 50/50 BTC/ETH", rep.hold, (board.HOLD_50_50 || {}).start_cash || 15);
   const head = ["Account", "Start", "Trades / week", "A day", "A week", "A year", "How often it lost money"];
@@ -543,10 +609,10 @@ $("stop-yes").onclick = async () => {
 };
 
 // Re-read theme colors when the OS theme flips.
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (chart) { chart.destroy(); chart = null; } buildChart(); loadHistory(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { charts.forEach((c) => c && c.destroy()); charts = [null, null]; buildChart(); loadHistory(); });
 
 initChips(); buildChart(); loadHistory(); loadBacktest(); connect();
-setInterval(() => { if (chart) { chart.data.datasets.forEach((d) => { d.data = d.data.filter((p) => !p.live); }); } loadHistory(); }, 60000);
+setInterval(() => { charts.forEach((c) => c && c.data.datasets.forEach((d) => { d.data = d.data.filter((p) => !p.live); })); loadHistory(); }, 60000);
 </script>
 </body>
 </html>

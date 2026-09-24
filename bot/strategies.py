@@ -24,6 +24,7 @@ import time
 
 from . import strategy as trend_d1
 from .candles import HOUR
+from .fmt import level
 
 SLEEVES = {"BTC": 0.5, "ETH": 0.5}
 
@@ -84,6 +85,9 @@ class Strategy:
     timeframe = ""
     needs = {}
     rule = ""
+    sleeves = SLEEVES  # coin -> share of the account; the rest stays in cash
+    group = "BTC & ETH"
+    benchmark = False
 
     def decide(self, asset, candles, pos, now_ms):
         raise NotImplementedError
@@ -108,6 +112,8 @@ class TrendD1(Strategy):
         c = self.cfg
         exp, info = trend_d1.target_exposure(closes, c["sma_days"], c["vol_target"],
                                              c["vol_lookback_days"], c["rebalance_step"])
+        if "sma" in info:  # bot/strategy.py reports cents, which would show a memecoin's SMA as 0.0
+            info["sma"], info["close"] = sma(closes, c["sma_days"]), closes[-1]
         info["exposure"] = exp
         return exp, info
 
@@ -118,8 +124,8 @@ class TrendD1(Strategy):
         n = self.cfg["sma_days"]
         if pos.get("exp", 0) > 0:
             return (f"{asset}: holding {pos['exp']:.0%} of its sleeve, price is {d:+.1%} vs the SMA{n} "
-                    f"({info['sma']:,.0f}); sells if a daily close ends below it")
-        return (f"{asset}: in cash, price is {d:+.1%} vs the SMA{n} ({info['sma']:,.0f}); "
+                    f"({level(info['sma'])}); sells if a daily close ends below it")
+        return (f"{asset}: in cash, price is {d:+.1%} vs the SMA{n} ({level(info['sma'])}); "
                 f"buys if a daily close ends above it")
 
 
@@ -135,7 +141,7 @@ class TrendH4(Strategy):
         if avg is None:
             return 0.0, {"reason": "not enough history", "exposure": 0.0}
         last = closes[-1]
-        info = {"close": round(last, 2), "sma": round(avg, 2), "above_sma": last > avg}
+        info = {"close": last, "sma": avg, "above_sma": last > avg}
         if last <= avg:
             info.update(reason="below SMA300: stay in cash", exposure=0.0)
             return 0.0, info
@@ -154,8 +160,8 @@ class TrendH4(Strategy):
         d = _pct(price, info["sma"])
         if pos.get("exp", 0) > 0:
             return (f"{asset}: holding {pos['exp']:.0%} of its sleeve, price is {d:+.1%} vs the 4h SMA300 "
-                    f"({info['sma']:,.0f}); sells if a 4h close ends below it")
-        return (f"{asset}: in cash, price is {d:+.1%} vs the 4h SMA300 ({info['sma']:,.0f}); "
+                    f"({level(info['sma'])}); sells if a 4h close ends below it")
+        return (f"{asset}: in cash, price is {d:+.1%} vs the 4h SMA300 ({level(info['sma'])}); "
                 f"buys if a 4h close ends above it")
 
 
@@ -173,12 +179,12 @@ class BreakoutH1(Strategy):
         high48 = max(r[2] for r in h[-self.HIGH_BARS - 1:-1])
         low24 = min(r[3] for r in h[-self.LOW_BARS - 1:-1])
         sma50 = sma([r[4] for r in d], 50)
-        info = {"close": close, "high48": high48, "low24": low24, "sma50": round(sma50, 2)}
+        info = {"close": close, "high48": high48, "low24": low24, "sma50": sma50}
         if pos.get("in"):
             peak = max(pos.get("peak") or pos.get("entry") or close, close)
             pos["peak"] = peak
             stop = peak * (1 - self.TRAIL)
-            info.update(peak=peak, stop=round(stop, 2))
+            info.update(peak=peak, stop=stop)
             if close < low24:
                 info["reason"] = "exit: closed below the prior 24h low"
                 return 0.0, info
@@ -202,15 +208,15 @@ class BreakoutH1(Strategy):
             stop = peak * (1 - self.TRAIL)
             exit_at = max(stop, info["low24"])
             return (f"{asset}: holding since {_hhmm(pos.get('entry_ms', 0))}, exits on an hourly close below "
-                    f"{exit_at:,.0f} ({_pct(price, exit_at):+.1%} away; trailing stop {stop:,.0f}, "
-                    f"24h low {info['low24']:,.0f})")
+                    f"{level(exit_at)} ({_pct(price, exit_at):+.1%} away; trailing stop {level(stop)}, "
+                    f"24h low {level(info['low24'])})")
         below_sma = price <= info["sma50"]
         if price <= info["high48"]:
-            s = f"{asset}: waiting, {asset} is {-_pct(price, info['high48']):.1%} below the 48h high ({info['high48']:,.0f})"
+            s = f"{asset}: waiting, {asset} is {-_pct(price, info['high48']):.1%} below the 48h high ({level(info['high48'])})"
         else:
-            s = f"{asset}: waiting for the hourly close, price is above the 48h high ({info['high48']:,.0f})"
+            s = f"{asset}: waiting for the hourly close, price is above the 48h high ({level(info['high48'])})"
         if below_sma:
-            s += f"; also below the daily SMA50 ({info['sma50']:,.0f}), so no buys"
+            s += f"; also below the daily SMA50 ({level(info['sma50'])}), so no buys"
         return s
 
 
@@ -227,10 +233,10 @@ class MeanRevH1(Strategy):
         closes = [r[4] for r in h[-self.needs["1h"]:]]
         close, r2 = closes[-1], rsi(closes, 2)
         sma50 = sma([r[4] for r in d], 50)
-        info = {"close": close, "rsi2": round(r2, 2), "sma50": round(sma50, 2)}
+        info = {"close": close, "rsi2": round(r2, 2), "sma50": sma50}
         if pos.get("in"):
             stop = pos["entry"] * (1 - self.STOP)
-            info.update(stop=round(stop, 2), held_h=round((now_ms - pos["entry_ms"]) / HOUR, 2))
+            info.update(stop=stop, held_h=round((now_ms - pos["entry_ms"]) / HOUR, 2))
             if r2 > self.SELL_ABOVE:
                 info["reason"] = "sell: RSI(2) above 70"
                 return 0.0, info
@@ -255,15 +261,32 @@ class MeanRevH1(Strategy):
         if pos.get("in"):
             stop = pos["entry"] * (1 - self.STOP)
             return (f"{asset}: holding since {_hhmm(pos['entry_ms'])}; sells when RSI(2) > 70 (last {info['rsi2']:.0f}), "
-                    f"at {_hhmm(pos['entry_ms'] + self.MAX_HOLD_MS)}, or on a close below {stop:,.0f} "
+                    f"at {_hhmm(pos['entry_ms'] + self.MAX_HOLD_MS)}, or on a close below {level(stop)} "
                     f"({_pct(price, stop):+.1%} away)")
         s = f"{asset}: waiting, RSI(2) on the last hourly close is {info['rsi2']:.0f} (buys below 5)"
         if price <= info["sma50"]:
-            s += f"; price is below the daily SMA50 ({info['sma50']:,.0f}), so no buys"
+            s += f"; price is below the daily SMA50 ({level(info['sma50'])}), so no buys"
         return s
 
 
-BASES = {"TREND_D1": TrendD1, "TREND_H4": TrendH4, "BREAKOUT_H1": BreakoutH1, "MEANREV_H1": MeanRevH1}
+class Hold(Strategy):
+    """Benchmark: buys its sleeves at the first daily decision and never sells."""
+    name, timeframe, benchmark = "HOLD", "1d", True
+    rule = "Benchmark: buys once at the start and holds."
+    needs = {"1d": 2}
+
+    def decide(self, asset, candles, pos, now_ms):
+        return 1.0, {"reason": "benchmark: buy once and hold", "close": candles["1d"][-1][4]}
+
+    def describe(self, asset, info, price, pos):
+        if pos.get("exp"):
+            entry = pos.get("entry")
+            since = f", {_pct(price, entry):+.1%} since buying at {level(entry)}" if entry else ""
+            return f"{asset}: holding since the start (benchmark){since}"
+        return f"{asset}: buys at the next daily decision (benchmark)"
+
+
+BASES = {"TREND_D1": TrendD1, "TREND_H4": TrendH4, "BREAKOUT_H1": BreakoutH1, "MEANREV_H1": MeanRevH1, "HOLD": Hold}
 
 
 def build(cfg):
@@ -276,6 +299,8 @@ def build(cfg):
     for s in out:
         s.start_cash, s.fee_rate, s.note, s.base = e.get("start_cash", 15.0), e.get("fee_rate", 0.001), "", s.name
     for v in e.get("variants", []):
+        if sum(v.get("sleeves", SLEEVES).values()) > 1.0 + 1e-9:
+            raise ValueError(f"{v['name']}: sleeves add up to more than 100% (no leverage)")
         if v["base"] == "TREND_D1":
             s = TrendD1(cfg, v["name"], v.get("overrides"))
         else:
@@ -286,6 +311,8 @@ def build(cfg):
         s.start_cash = v.get("start_cash", e.get("start_cash", 15.0))
         s.fee_rate = v.get("fee_rate", e.get("fee_rate", 0.001))
         s.note, s.base = v.get("note", ""), v["base"]
+        s.sleeves = dict(v.get("sleeves", SLEEVES))
+        s.group = v.get("group", "BTC & ETH")
         if s.fee_rate != e.get("fee_rate", 0.001):
             s.rule += f" Pays {s.fee_rate:.1%} per trade."
         out.append(s)

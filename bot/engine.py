@@ -22,6 +22,7 @@ from . import risk, strategies
 from .accounts import ASSETS, Account
 from .alerts import Alerts
 from .candles import INTERVAL_MS, last_close_ms
+from .fmt import px, qty_text
 from .orderbook import simulate_market_order
 
 HOLD = "HOLD_50_50"
@@ -98,6 +99,14 @@ class Engine:
         self.start_cash = {st.name: getattr(st, "start_cash", None) or self.ecfg["start_cash"] for st in strategy_list}
         self.risk_cfg = {"risk": self.ecfg["risk"]}
         self.delay_ms = int(self.ecfg.get("decision_delay_seconds", 5) * 1000)
+        # coins per account (the rest of each account stays in cash), and every coin we need prices for
+        self.sleeves = {HOLD: dict(strategies.SLEEVES)}
+        self.sleeves.update({st.name: dict(getattr(st, "sleeves", strategies.SLEEVES)) for st in strategy_list})
+        self.assets = []
+        for sl in self.sleeves.values():
+            self.assets += [a for a in sl if a not in self.assets]
+        self.boot_ms = self.now_ms()
+        self.unpriced_logged = set()
         self.lock = threading.RLock()
         self.risk_state = {}
         self.last_minute = None
@@ -116,9 +125,10 @@ class Engine:
         for name in [HOLD] + list(self.strategies):
             if name in saved:
                 out[name] = Account(saved[name])
+                out[name].ensure_assets(self.sleeves[name])
             else:
                 cash = self.start_cash.get(name, self.ecfg["start_cash"])
-                out[name] = Account.create(name, cash, self.now_ms())
+                out[name] = Account.create(name, cash, self.now_ms(), list(self.sleeves[name]))
                 self.store.save_account(name, out[name].s)
                 self.event(name, "account", f"{self.label(name)} demo account opened with ${cash:.2f}")
             self.risk_state[name] = {"ok": True, "reasons": [], "checked_ms": None}
@@ -138,7 +148,11 @@ class Engine:
             self.store.save_account(name, a.s)
 
     def prices(self):
-        return {a: self.feed.mid(sym(a)) for a in ASSETS}
+        return {a: self.feed.mid(sym(a)) for a in self.assets}
+
+    def priced(self, name, prices):
+        """True when every coin this account trades or holds has a live price."""
+        return all(prices.get(a) is not None for a in self.accounts[name].coins_in_use(self.sleeves[name]))
 
     # ---------- main loop ----------
     def tick(self):
@@ -162,20 +176,29 @@ class Engine:
         with self.lock:
             now = self.now_ms()
             prices = self.prices()
-            if any(p is None for p in prices.values()):
+            missing = sorted(a for a, p in prices.items() if p is None)
+            # at startup, wait (up to 2 minutes) for every coin; after that a coin without a
+            # price only pauses the accounts that use it
+            if missing and (now - self.boot_ms < 120_000 or len(missing) == len(prices)):
                 if not self.waiting_logged:
-                    self.event("engine", "check", f"waiting for live prices (feed: {self.feed.status})")
+                    self.event("engine", "check", f"waiting for live prices of {', '.join(missing)} (feed: {self.feed.status})")
                     self.waiting_logged = True
                 return False
             self.waiting_logged = False
-            self.fund_hold(prices, now)
+            for a in set(missing) - self.unpriced_logged:
+                self.event("engine", "error", f"no live price for {a}: accounts that use it are paused")
+            self.unpriced_logged = set(missing)
+            ready = [n for n in self.accounts if self.priced(n, prices)]
+            if HOLD in ready:
+                self.fund_hold(prices, now)
             points = {}
-            for name, a in self.accounts.items():
+            for name in ready:
+                a = self.accounts[name]
                 eq = a.equity(prices)
                 a.mark(eq, now)
                 points[name] = eq
             self.store.add_equity(now // 60_000 * 60_000, points)
-            blocked = {n: self.check_risk(a, prices, now) for n, a in self.accounts.items()}
+            blocked = {n: self.check_risk(self.accounts[n], prices, now) for n in ready}
             bad = {n: r for n, r in blocked.items() if r}
             if not bad:
                 risk_text = "risk OK for all"
@@ -183,10 +206,12 @@ class Engine:
                 risk_text = "risk BLOCKED for all: " + "; ".join(next(iter(bad.values())))
             else:
                 risk_text = "risk BLOCKED for " + ", ".join(f"{n} ({'; '.join(r)})" for n, r in bad.items())
-            text = f"marked {len(points)} accounts at BTC {prices['BTC']:,.2f} / ETH {prices['ETH']:,.2f}; {risk_text}"
+            text = (f"marked {len(points)} accounts at BTC {px(prices.get('BTC'))} / ETH {px(prices.get('ETH'))}"
+                    + (f" and {len(prices) - 2} more coins" if len(prices) > 2 else "") + f"; {risk_text}")
             self.event("engine", "check", text)
             for name, strat in self.strategies.items():
-                self.maybe_decide(strat, self.accounts[name], now)
+                if name in ready:
+                    self.maybe_decide(strat, self.accounts[name], now)
             self.save()
             self.alerts.maybe_daily(now, self.leaderboard(prices))
             return True
@@ -194,7 +219,8 @@ class Engine:
     # ---------- risk ----------
     def check_risk(self, acct, prices, now, orders=()):
         eq = acct.equity(prices)
-        age_h = self.feed.age_s() / 3600
+        coins = acct.coins_in_use(self.sleeves.get(acct.name, {}))
+        age_h = self.feed.age_s([sym(a) for a in coins]) / 3600
         state = {"peak_equity": acct.s["peak_equity"], "last_equity": acct.s["day_start_equity"]}
         problems, _ = risk.check(self.risk_cfg, state, eq, age_h, list(orders), loss_label="today (UTC)")
         self.risk_state[acct.name] = {"ok": not problems, "reasons": problems, "checked_ms": now}
@@ -254,7 +280,7 @@ class Engine:
                             price=sim["avg_price"], notional=sim["notional"], fee=sim["fee_usd"], mid=sim["mid"],
                             slippage_bps=sim["slippage_bps"], status="filled", reason=reason)
         self.event(acct.name, "fill",
-                   f"{self.label(acct.name)} {side} {sim['qty']:.6f} {asset} at {sim['avg_price']:,.2f} "
+                   f"{self.label(acct.name)} {side} {qty_text(sim['qty'])} {asset} at {px(sim['avg_price'])} "
                    f"(${sim['notional']:.2f}, fee ${sim['fee_usd']:.4f}, {sim['slippage_bps']:.1f} bp vs mid, "
                    f"{sim['levels']} book level{'s' if sim['levels'] != 1 else ''})")
         self.alerts.trade(self.label(acct.name), "DEMO", side, asset, sim["qty"], sim["avg_price"],
@@ -294,7 +320,7 @@ class Engine:
         give_up = now >= retry_until
         try:
             windows = {a: {iv: self.candles.get(sym(a), iv, n, now) for iv, n in strat.needs.items()}
-                       for a in ASSETS}
+                       for a in self.sleeves[acct.name]}
         except Exception as e:
             if self.first_try.get(strat.name) != close_ms:
                 self.first_try[strat.name] = close_ms
@@ -305,19 +331,20 @@ class Engine:
             return
         prices = self.prices()
         decisions = {}
-        for a in ASSETS:
+        coins = list(self.sleeves[acct.name])
+        for a in coins:
             pos = acct.s["pos"][a]
             exp, info = strat.decide(a, windows[a], pos, close_ms)
             acct.s["info"][a] = info
             decisions[a] = exp
             self.event(strat.name, "signal",
-                       f"{strat.name} {a} {strat.timeframe} close {windows[a][strat.timeframe][-1][4]:,.2f}: "
+                       f"{strat.name} {a} {strat.timeframe} close {px(windows[a][strat.timeframe][-1][4])}: "
                        f"{info.get('reason', '')} (target {exp:.0%} of the {a} sleeve)")
-        wants = [a for a in ASSETS if decisions[a] != acct.s["pos"][a].get("exp", 0.0)]
+        wants = [a for a in coins if decisions[a] != acct.s["pos"][a].get("exp", 0.0)]
         wants.sort(key=lambda a: decisions[a] > acct.s["pos"][a].get("exp", 0.0))  # sells first
         problems = self.check_risk(acct, prices, now, orders=wants)
         pending = False
-        for a in ASSETS:
+        for a in coins:
             if a in wants:
                 pending |= self.execute(strat, acct, a, decisions[a], close_ms, problems, prices, give_up) == "retry"
             else:
@@ -331,7 +358,7 @@ class Engine:
         s = acct.s
         prev = s["pos"][asset].get("exp", 0.0)
         side = "BUY" if exp > prev else "SELL"
-        target_w = risk.clamp_targets({asset: strategies.SLEEVES[asset] * exp}, self.risk_cfg)[asset]
+        target_w = risk.clamp_targets({asset: self.sleeves[acct.name][asset] * exp}, self.risk_cfg)[asset]
         info = s["info"][asset]
         reason = info.get("reason", "")
         eq = acct.equity(prices)
@@ -357,7 +384,7 @@ class Engine:
                                    note="already at target, no order needed")
             return "done"
         self.event(acct.name, "order", f"{strat.name} {asset} market {side} "
-                   + (f"${order['usd']:.2f}" if side == "BUY" else f"{order['qty']:.6f} {asset}") + f": {reason}")
+                   + (f"${order['usd']:.2f}" if side == "BUY" else f"{qty_text(order['qty'])} {asset}") + f": {reason}")
         cap_room = self.risk_cfg["risk"]["max_weight_per_asset"] * eq - acct.value(asset, prices)
         status, sim, why = self.market_order(acct, asset, side, usd=order.get("usd"), qty=order.get("qty"),
                                              max_usd=cap_room if side == "BUY" else None)
@@ -365,7 +392,7 @@ class Engine:
             self.book_fill(acct, asset, side, sim, reason, decision_ms, exposure=exp)
             self.store.add_receipt(acct.name, asset, decision_ms, info, signal, risk_r, order,
                                    fill_price=sim["avg_price"], fee=sim["fee_usd"], slippage_bps=sim["slippage_bps"],
-                                   note=f"filled {sim['qty']:.8f} over {sim['levels']} level(s), mid {sim['mid']:.2f}")
+                                   note=f"filled {qty_text(sim['qty'])} over {sim['levels']} level(s), mid {px(sim['mid'])}")
             return "filled"
         if status == "skipped" and side == "SELL" and exp == 0 and s["holdings"][asset] * prices[asset] < 5.5:
             # dust below the exchange minimum can never be sold: treat the exit as done
@@ -382,6 +409,8 @@ class Engine:
     def leaderboard(self, prices):
         rows = []
         for name, a in self.accounts.items():
+            if not self.priced(name, prices):
+                continue
             r = a.summary(prices)
             r["label"] = self.label(name)
             if name == HOLD:
@@ -390,10 +419,15 @@ class Engine:
             else:
                 bt = self.backtest.get(name, {"verdict": "NOT BACKTESTED", "why": "run python3 backtest_strategies.py"})
                 r["backtest"], r["backtest_why"] = bt["verdict"], bt["why"]
-                r["timeframe"], r["rule"] = self.strategies[name].timeframe, self.strategies[name].rule
+                st = self.strategies[name]
+                r["timeframe"], r["rule"] = st.timeframe, st.rule
+                if getattr(st, "benchmark", False):
+                    r["backtest"], r["backtest_why"] = "BENCHMARK", "buys at the start and holds"
             r["testnet"] = bool(self.testnet) and name == self.ecfg.get("testnet_strategy")
             r["start_cash"], r["fee_rate"] = a.s["start_cash"], self.fee_for(name)
             r["note"] = getattr(self.strategies.get(name), "note", "") if name != HOLD else ""
+            r["group"] = getattr(self.strategies.get(name), "group", "BTC & ETH")
+            r["coins"] = list(self.sleeves[name])
             rows.append(r)
         rows.sort(key=lambda r: -r["pnl_pct"])  # accounts start with $15 or $20, so compare in %
         return rows
@@ -406,15 +440,18 @@ class Engine:
                 text = ([f"holding ${h['BTC']:.2f} of BTC and ${h['ETH']:.2f} of ETH since "
                          f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(a.s['started_ms'] / 1000))}"]
                         if a.s["funded"] else ["waiting to buy the 50/50 benchmark"])
-                out.append({"account": name, "label": self.label(name), "lines": text, "next": None})
+                out.append({"account": name, "label": self.label(name), "lines": text, "next": None,
+                            "group": "BTC & ETH"})
+                continue
+            if not self.priced(name, prices):
                 continue
             st = self.strategies[name]
             lines = []
-            for x in ASSETS:
+            for x in self.sleeves[name]:
                 info, pos = a.s["info"].get(x) or {}, a.s["pos"][x]
                 lines.append(st.describe(x, info, prices[x], pos) if info and prices[x] else f"{x}: waiting for the first decision")
             nxt = last_close_ms(st.timeframe, now) + INTERVAL_MS[st.timeframe]
-            out.append({"account": name, "label": name, "lines": lines, "next": nxt,
+            out.append({"account": name, "label": name, "lines": lines, "next": nxt, "group": st.group,
                         "next_text": f"next {st.timeframe} decision at {_hhmm(nxt)}"})
         return out
 
@@ -434,9 +471,8 @@ class Engine:
     def _build_snapshot(self, sec):
         now = self.now_ms()
         prices = self.prices()
-        ok_prices = all(p is not None for p in prices.values())
-        market = {"status": self.feed.status, "label": self.market_label}
-        for x in ASSETS:
+        market = {"status": self.feed.status, "label": self.market_label, "coins": list(self.assets)}
+        for x in self.assets:
             q = self.feed.quote(sym(x))
             market[x] = {"price": q["mid"], "bid": q["bid"], "ask": q["ask"], "spread": q["spread"],
                          "spread_bps": q["spread_bps"], "age_s": q["age_s"], "source": q["source"]}
@@ -457,8 +493,8 @@ class Engine:
                        "testnet_status": gate.status if gate else "off",
                        "market_label": self.market_label},
             "market": market,
-            "leaderboard": self.leaderboard(prices) if ok_prices else [],
-            "states": self.states(prices, now) if ok_prices else [],
+            "leaderboard": self.leaderboard(prices),
+            "states": self.states(prices, now),
             "risk": risk_rows,
             "stopped": stopped,
             "feed": self.store.recent_events(80),
@@ -470,6 +506,7 @@ class Engine:
 
     def history(self):
         return {"accounts": {n: self.label(n) for n in self.accounts},
+                "groups": {n: getattr(self.strategies.get(n), "group", "BTC & ETH") for n in self.accounts},
                 "start": {n: a.s["start_cash"] for n, a in self.accounts.items()},
                 "equity": self.store.equity_history()}
 

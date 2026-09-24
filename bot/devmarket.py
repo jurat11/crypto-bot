@@ -12,8 +12,13 @@ from .candles import INTERVAL_MS
 from .exchange import ExchangeAdapter, SymbolFilters
 from .market import MarketFeed
 
-BASE = {"BTCUSDT": 84_000.0, "ETHUSDT": 2_650.0}
-STEP = {"BTCUSDT": ("0.00001", "0.01"), "ETHUSDT": ("0.0001", "0.01")}
+BASE = {"BTCUSDT": 84_000.0, "ETHUSDT": 2_650.0, "SOLUSDT": 180.0, "XRPUSDT": 0.62,
+        "DOGEUSDT": 0.15, "PEPEUSDT": 0.0000105, "PAXGUSDT": 3_750.0}
+STEP = {"BTCUSDT": ("0.00001", "0.01"), "ETHUSDT": ("0.0001", "0.01"), "SOLUSDT": ("0.001", "0.01"),
+        "XRPUSDT": ("0.1", "0.0001"), "DOGEUSDT": ("1", "0.00001"), "PEPEUSDT": ("1", "0.00000001"),
+        "PAXGUSDT": ("0.0001", "0.01")}
+WILD = {"BTCUSDT": 1.0, "ETHUSDT": 1.25, "SOLUSDT": 1.6, "XRPUSDT": 1.5, "DOGEUSDT": 2.0,
+        "PEPEUSDT": 2.6, "PAXGUSDT": 0.25}
 DAY = 86_400.0
 
 
@@ -30,8 +35,8 @@ def _noise(t, seed):
 
 
 def price_at(symbol, t):
-    seed = 1 if symbol == "BTCUSDT" else 2
-    k = 1.0 if seed == 1 else 1.25
+    seed = sorted(BASE).index(symbol) + 1
+    k = WILD[symbol]
     x = (0.18 * math.sin(2 * math.pi * t / (120 * DAY) + seed)
          + 0.06 * math.sin(2 * math.pi * t / (9 * DAY) + 2 * seed)
          + 0.012 * math.sin(2 * math.pi * t / (0.5 * DAY) + seed)
@@ -51,16 +56,14 @@ class FakePublic(ExchangeAdapter):
 
     def symbol_filters(self, symbol):
         step, tick = STEP[symbol]
-        return SymbolFilters(symbol, step, step, "9000", tick, "5")
+        return SymbolFilters(symbol, step, step, "90000000000", tick, "5")
 
     def depth(self, symbol, limit=100):
         p = price_at(symbol, self.clock())
-        tick = 0.01
-        bids = [(round(p - tick * (1 + i * i), 2), 0.02 + 0.03 * i) for i in range(min(limit, 30))]
-        asks = [(round(p + tick * (i * i), 2), 0.02 + 0.03 * i) for i in range(min(limit, 30))]
-        if symbol == "ETHUSDT":
-            bids = [(b, q * 25) for b, q in bids]
-            asks = [(a, q * 25) for a, q in asks]
+        tick = float(STEP[symbol][1])
+        usd = 1_700.0  # about $1,700 more depth per level
+        bids = [(p - tick * (1 + i * i), (0.02 + 0.03 * i) * usd * 50 / p) for i in range(min(limit, 30))]
+        asks = [(p + tick * (i * i), (0.02 + 0.03 * i) * usd * 50 / p) for i in range(min(limit, 30))]
         return {"bids": bids, "asks": asks}
 
     def book_ticker(self, symbols):

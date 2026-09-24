@@ -115,6 +115,46 @@ class Backtest(unittest.TestCase):
         self.assertEqual(bt.verdict(mk(-0.2, -0.3))[0], "FAILED BACKTEST")
 
 
+class OtherCoins(unittest.TestCase):
+    def test_partial_sleeve_keeps_the_rest_in_cash(self):
+        curve = {k * D: 1.0 + k for k in range(3)}  # the coin triples
+        series = bt.combine({"PAXG": curve}, {"PAXG": 0.5}, 0, 10 * D)
+        self.assertAlmostEqual(series[-1][1], 0.5 + 0.5 * 3.0)
+
+    def test_coin_listed_after_the_in_sample_period(self):
+        periods = {"is": (T0 + 100 * D, T0 + 260 * D), "oos": (T0 + 260 * D, T0 + 420 * D)}
+        full = synthetic(420, 0.9, 0.35, 1)
+        new_coin = [r for r in synthetic(420, 0.9, 0.9, 5) if r[0] >= T0 + 200 * D]  # listed on day 200
+        cfg = dict(CFG, engine=dict(CFG["engine"], variants=[
+            {"name": "NEW_TREND", "base": "TREND_D1", "sleeves": {"NEW": 0.5}, "overrides": {"vol_target": 0}},
+            {"name": "NEW_HOLD", "base": "HOLD", "sleeves": {"NEW": 0.5}}]))
+        rep = bt.run({"BTC": full, "ETH": full, "NEW": new_coin}, cfg, periods)
+        res = rep["strategies"]["NEW_TREND"]["results"]["0.001"]
+        self.assertIsNotNone(res["oos"]["return"])
+        self.assertEqual(rep["strategies"]["NEW_TREND"]["coins"], ["NEW"])
+        self.assertIn(rep["strategies"]["NEW_TREND"]["verdict"], ("PASSED", "FAILED BACKTEST"))
+        self.assertEqual(rep["strategies"]["NEW_HOLD"]["verdict"], "BENCHMARK")
+        self.assertIn("| NEW_TREND (NEW) | 0.1% |", bt.table(rep))
+
+    def test_no_in_sample_data_at_all(self):
+        periods = {"is": (T0, T0 + 100 * D), "oos": (T0 + 260 * D, T0 + 420 * D)}
+        late = [r for r in synthetic(420, 0.9, 0.9, 6) if r[0] >= T0 + 250 * D]
+        full = synthetic(420, 0.9, 0.35, 1)
+        cfg = dict(CFG, engine=dict(CFG["engine"], variants=[
+            {"name": "LATE", "base": "TREND_D1", "sleeves": {"LATE": 0.5}, "overrides": {"vol_target": 0}}]))
+        rep = bt.run({"BTC": full, "ETH": full, "LATE": late}, cfg, periods)
+        r = rep["strategies"]["LATE"]["results"]["0.001"]
+        self.assertIsNone(r["is"]["cagr"])
+        self.assertIn("n/a", bt.table(rep))
+
+    def test_strategies_without_price_history_are_left_out(self):
+        full = synthetic(420, 0.9, 0.35, 1)
+        periods = {"is": (T0 + 100 * D, T0 + 260 * D), "oos": (T0 + 260 * D, T0 + 420 * D)}
+        rep = bt.run({"BTC": full, "ETH": full}, CFG, periods)
+        self.assertNotIn("MEME_TREND", rep["strategies"])
+        self.assertIn("TREND_D1", rep["strategies"])
+
+
 class Cache(unittest.TestCase):
     def test_forming_candle_is_never_cached(self):
         now = int(time.time() * 1000)

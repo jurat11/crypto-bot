@@ -103,7 +103,16 @@ class BacktestGate(unittest.TestCase):
         from bot.server import wired_strategies
         wired, held = wired_strategies(CFG, {"TREND_D1": {"verdict": "PASSED", "why": ""}})
         self.assertEqual([s.name for s in wired], ["TREND_D1"])
-        self.assertEqual(held, ["TREND_H4", "BREAKOUT_H1", "MEANREV_H1", "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"])
+        self.assertEqual(held, [n for n in CFG["engine"]["strategies"] if n != "TREND_D1"])
+
+    def test_price_feed_covers_every_coin(self):
+        from bot import strategies
+        from bot.server import symbols_for
+        syms = symbols_for(strategies.build(CFG))
+        self.assertEqual(syms[:2], ["BTCUSDT", "ETHUSDT"])
+        for coin in ("SOL", "XRP", "DOGE", "PEPE", "PAXG"):
+            self.assertIn(coin + "USDT", syms)
+        self.assertEqual(len(syms), len(set(syms)))
 
     def test_first_launch_runs_the_backtest(self):
         from bot import server

@@ -49,6 +49,20 @@ The bot runs **on your computer**. If the Mac is shut down, asleep, or the Termi
 
 They go through the same backtest before they trade. None of them uses leverage.
 
+**More coins ($20 each):** altcoins, memecoins and gold, each as a pair: the TREND_D1 rule, plus a "just hold" benchmark on the same coins. They are set in `engine.variants` in `config.json`, where you can add or swap coins.
+| Account | Coins | Rule |
+|---|---|---|
+| ALTS_TREND / ALTS_HOLD | SOL, XRP | hold while the daily close is above SMA50, else cash / buy once and hold |
+| MEME_TREND / MEME_HOLD | DOGE, PEPE | same pair of rules |
+| GOLD_TREND / GOLD_HOLD | PAXG, a token backed by 1 troy ounce of gold | same pair of rules |
+
+- **Half the account per coin.** The per-coin cap in the risk rules is 50%, so the gold accounts keep the other half in cash.
+- **No volatility dial.** With $10 per coin, the dial would size memecoin orders below Binance's $5 minimum.
+- **No silver.** Binance spot has no silver token.
+- **Short histories.** PEPE only started trading in 2023, so it has no 2018-22 in-sample data. It is judged on 2023+ alone, and the table shows "n/a" for in-sample.
+
+The first launch after adding coins downloads their price history for the backtest, which takes a few minutes. A coin without a live price only pauses the accounts that use it.
+
 Each strategy runs a 50% BTC and a 50% ETH sleeve and decides **only on closed candles of its own timeframe**. There is no leverage, margin, futures, martingale, averaging down or grid logic anywhere.
 
 **Backtest first.** `python3 backtest_strategies.py` runs the same decision code on Binance hourly candles since 2017. It reports **in-sample 2018-2022** (where rules are chosen) against **out-of-sample 2023 to today** (never used for choosing), at **0.1% and 0.4% fees**. A strategy that loses money out of sample at either fee still runs in demo, but the dashboard flags it **FAILED BACKTEST**. Parameters are never tuned to make a strategy pass.
@@ -88,6 +102,7 @@ How testnet orders stay safe:
 
 ## What $15 really buys
 - **Binance's minimum order is $5.** Each coin's sleeve is $7.50, so a vol-dial position under ~67% (under $5) cannot be placed, and TREND_D1's small 10% rebalances ($0.75) are skipped. The activity feed says so each time.
+- **Memecoins trade in whole units.** $10 of PEPE is about a million tokens, and prices show 6 significant digits.
 - **Quantities come in exchange steps** (0.00001 BTC, about $0.85 at today's price, and 0.0001 ETH, about $0.27). A buy takes the step nearest its target, as long as that stays under the 50% per-coin cap; otherwise it rounds down. Selling can leave a few cents of "dust".
 - Every round trip pays about 0.2% in fees plus the spread. The leaderboard shows fees paid, so you can see how much they add up to.
 

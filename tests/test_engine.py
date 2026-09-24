@@ -41,25 +41,37 @@ class FakePublic:
 
     def __init__(self, clock, prices=None):
         self.clock = clock
-        self.prices = prices or {"BTCUSDT": 84_000.0, "ETHUSDT": 2_650.0}
+        self.prices = prices or {"BTCUSDT": 84_000.0, "ETHUSDT": 2_650.0, "SOLUSDT": 180.0,
+                                 "XRPUSDT": 0.6, "PEPEUSDT": 0.00001}
         self.depth_calls = 0
         self.fail_depth = False
         self.publish_lag = 0
+        self.silent = set()  # symbols the REST ticker stops returning (no fresh price)
 
     def depth(self, symbol, limit=100):
         self.depth_calls += 1
         if self.fail_depth:
             raise OSError("network down")
         p = self.prices[symbol]
-        tick = 0.01
-        return {"bids": [(p - tick * (i + 1), 0.05) for i in range(20)],
-                "asks": [(p + tick * i, 0.05) for i in range(20)]}
+        tick = 0.01 if p >= 1 else p * 1e-4
+        size = 0.05 if symbol in FILTERS else 4_200 / p  # about $4,200 per level
+        return {"bids": [(p - tick * (i + 1), size) for i in range(20)],
+                "asks": [(p + tick * i, size) for i in range(20)]}
 
     def symbol_filters(self, symbol):
-        return exchange.SymbolFilters.from_symbol_info(FILTERS[symbol])
+        if symbol in FILTERS:
+            return exchange.SymbolFilters.from_symbol_info(FILTERS[symbol])
+        step = {"SOLUSDT": "0.001", "XRPUSDT": "0.1", "PEPEUSDT": "1"}.get(symbol, "0.001")
+        return exchange.SymbolFilters(symbol, step, step, "90000000000", "0.00000001", "5")
 
     def book_ticker(self, symbols):
-        return {s: (self.prices[s] - 0.01, self.prices[s]) for s in symbols}
+        out = {}
+        for s in symbols:
+            if s in self.silent:
+                continue
+            p = self.prices[s]
+            out[s] = (p - (0.01 if p >= 1 else p * 1e-4), p)
+        return out
 
     def klines(self, symbol, interval, limit=500, start_ms=None, end_ms=None):
         step = candles.INTERVAL_MS[interval]
@@ -83,6 +95,14 @@ class Stub(strategies.Strategy):
 
     def describe(self, asset, info, price, pos):
         return f"{asset}: stub"
+
+
+class CoinStub(Stub):
+    """A strategy on other coins: half the account per coin, the rest in cash."""
+
+    def __init__(self, name, sleeves, want, start_cash=20.0):
+        super().__init__()
+        self.name, self.sleeves, self.want, self.start_cash = name, sleeves, want, start_cash
 
 
 class Collector:
@@ -184,6 +204,63 @@ class VariantAccounts(EngineCase):
         rows = eng.snapshot()["leaderboard"]
         self.assertEqual({r["account"]: r["start_cash"] for r in rows}["STUB_HIGH_FEE"], 20.0)
         self.assertEqual([r["pnl_pct"] for r in rows], sorted([r["pnl_pct"] for r in rows], reverse=True))
+
+
+class OtherCoins(EngineCase):
+    def feed_for(self, *symbols):
+        self.feed = MarketFeed(list(symbols), self.public, clock=self.clock)
+        self.feed.poll_once()
+
+    def test_account_trades_only_its_own_coins(self):
+        self.feed_for("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
+        alts = CoinStub("ALTS", {"SOL": 0.5, "XRP": 0.5}, {"SOL": 1.0, "XRP": 0.0})
+        eng = self.engine([alts])
+        eng.tick()
+        acct = eng.accounts["ALTS"]
+        self.assertEqual(acct.s["start_cash"], 20.0)
+        self.assertEqual(set(acct.s["holdings"]), {"SOL", "XRP"})
+        self.assertAlmostEqual(acct.value("SOL", eng.prices()), 10.0, delta=0.2)
+        self.assertEqual(acct.s["holdings"]["XRP"], 0.0)
+        row = [r for r in eng.snapshot()["leaderboard"] if r["account"] == "ALTS"][0]
+        self.assertEqual(row["coins"], ["SOL", "XRP"])
+        self.assertIn("SOL", eng.snapshot()["market"]["coins"])
+
+    def test_memecoin_order_and_price_text(self):
+        self.feed_for("BTCUSDT", "ETHUSDT", "PEPEUSDT")
+        meme = CoinStub("MEME", {"PEPE": 0.5}, {"PEPE": 1.0})
+        eng = self.engine([meme])
+        eng.tick()
+        fill = [f for f in self.store.recent_fills() if f["account"] == "MEME"][0]
+        self.assertEqual(fill["qty"], int(fill["qty"]))  # PEPE trades in whole units
+        self.assertAlmostEqual(fill["notional"], 10.0, delta=0.01)
+        text = [e["text"] for e in self.store.recent_events() if e["kind"] == "fill" and "PEPE" in e["text"]][0]
+        self.assertIn("1,000,000 PEPE at 0.00001", text)
+
+    def test_missing_price_pauses_only_accounts_that_use_it(self):
+        self.public.silent = {"PEPEUSDT"}
+        self.feed_for("BTCUSDT", "ETHUSDT", "PEPEUSDT")
+        meme = CoinStub("MEME", {"PEPE": 0.5}, {"PEPE": 1.0})
+        eng = self.engine([self.stub, meme])
+        eng.tick()
+        self.assertFalse(eng.accounts[HOLD].s["funded"])  # first 2 minutes: wait for every coin
+        self.minute(eng, 3)
+        self.assertTrue(eng.accounts[HOLD].s["funded"])
+        self.assertGreater(eng.accounts["STUB_H1"].s["holdings"]["BTC"], 0)
+        self.assertEqual(eng.accounts["MEME"].s["holdings"]["PEPE"], 0.0)
+        self.assertNotIn("MEME", {r["account"] for r in eng.snapshot()["leaderboard"]})
+        errors = [e["text"] for e in self.store.recent_events() if e["kind"] == "error"]
+        self.assertEqual(errors, ["no live price for PEPE: accounts that use it are paused"])
+
+    def test_stale_coin_blocks_buys_only_where_it_is_used(self):
+        self.feed_for("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
+        alts = CoinStub("ALTS", {"SOL": 0.5, "XRP": 0.5}, {"SOL": 0.0, "XRP": 0.0})
+        eng = self.engine([self.stub, alts])
+        eng.tick()
+        self.public.silent = {"SOLUSDT"}  # SOL stops updating
+        self.minute(eng, 10)
+        self.assertIn("min old", " ".join(eng.risk_state["ALTS"]["reasons"]))
+        self.assertTrue(eng.risk_state["STUB_H1"]["ok"])
+        self.assertEqual(self.feed.age_s(["BTCUSDT"]), 0)
 
 
 class Decisions(EngineCase):
@@ -471,6 +548,21 @@ class Feed(unittest.TestCase):
         pub.publish_lag = 2 * H * 1000
         with self.assertRaises(CandlesNotReady):
             cs.get("BTCUSDT", "1h", 10, int(clock() * 1000) + H * 1000)
+
+
+class Formatting(unittest.TestCase):
+    def test_prices_for_every_size_of_coin(self):
+        from bot.fmt import level, px, qty_text
+        self.assertEqual(px(84_253.614), "84,253.61")
+        self.assertEqual(px(2.684123), "2.6841")
+        self.assertEqual(px(0.00001234), "0.00001234")
+        self.assertEqual(px(0.468289689), "0.46829")
+        self.assertEqual(px(0.0000102940123), "0.000010294")
+        self.assertEqual(level(78_296.4), "78,296")
+        self.assertEqual(level(0.0000105), "0.0000105")
+        self.assertEqual(qty_text(1_234_567.0), "1,234,567")
+        self.assertEqual(qty_text(0.00008), "0.00008")
+        self.assertEqual(qty_text(2.5), "2.5")
 
 
 class AlertRules(unittest.TestCase):

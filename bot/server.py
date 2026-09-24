@@ -114,6 +114,14 @@ def wired_strategies(cfg, backtest):
     return [s for s in wanted if s.name in backtest], [s.name for s in wanted if s.name not in backtest]
 
 
+def symbols_for(wired):
+    """BTC and ETH (the Hold 50/50 benchmark) plus every coin a wired strategy trades."""
+    coins = ["BTC", "ETH"]
+    for s in wired:
+        coins += [a for a in getattr(s, "sleeves", {}) if a not in coins]
+    return [f"{a}USDT" for a in coins]
+
+
 def ensure_backtest(cfg):
     """First launch: run the backtest before any strategy trades in demo."""
     backtest = load_backtest()
@@ -140,9 +148,9 @@ def build(args):
     if args.fake_market:
         from .devmarket import FakeFeed, FakePublic
         public = FakePublic()
-        feed = FakeFeed(["BTCUSDT", "ETHUSDT"], public)
+        wired = strategies.build(cfg)  # every strategy, on made-up prices, to exercise the page
+        feed = FakeFeed(symbols_for(wired), public)
         store = Store("data/dev.db")
-        wired = strategies.build(cfg)  # all four, on made-up prices, to exercise the page
         label = "FAKE PRICES (dev mode, not real market data)"
         alerts = Alerts(enabled=False)
     else:
@@ -153,7 +161,7 @@ def build(args):
     alerts.store = store
     events = lambda text: store.add_event("market", "check", text)
     if feed is None:
-        feed = MarketFeed(["BTCUSDT", "ETHUSDT"], public, poll_s=ecfg.get("rest_poll_seconds", 5), log=events)
+        feed = MarketFeed(symbols_for(wired), public, poll_s=ecfg.get("rest_poll_seconds", 5), log=events)
 
     worker = gate = None
     if not args.fake_market:

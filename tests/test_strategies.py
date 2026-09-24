@@ -65,8 +65,8 @@ class Variants(unittest.TestCase):
         self.all = {s.name: s for s in strategies.build(CFG)}
 
     def test_variants_from_config(self):
-        self.assertEqual(set(self.all), {"TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1",
-                                         "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"})
+        self.assertTrue({"TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1", "D1_ALL_IN", "D1_FAST",
+                         "D1_HIGH_FEE", "ALTS_TREND", "MEME_TREND", "GOLD_TREND", "GOLD_HOLD"} <= set(self.all))
         self.assertEqual((self.all["TREND_D1"].start_cash, self.all["TREND_D1"].fee_rate), (15.0, 0.001))
         self.assertEqual((self.all["D1_HIGH_FEE"].start_cash, self.all["D1_HIGH_FEE"].fee_rate), (20.0, 0.004))
         self.assertEqual(self.all["D1_FAST"].base, "TREND_D1")
@@ -88,6 +88,36 @@ class Variants(unittest.TestCase):
         self.assertEqual(exp20, 0.0)  # 99 is below the SMA20 (101.5)
         self.assertAlmostEqual(info50["sma"], (100.0 * 15 + 104.0 * 25 + 99.0 * 10) / 50)
         self.assertIn("SMA20", self.all["D1_FAST"].describe("BTC", info20, 99.0, {}))
+
+    def test_other_coins_and_benchmarks(self):
+        self.assertEqual(self.all["MEME_TREND"].sleeves, {"DOGE": 0.5, "PEPE": 0.5})
+        self.assertEqual(self.all["MEME_TREND"].group, "More coins")
+        self.assertEqual(self.all["TREND_D1"].sleeves, {"BTC": 0.5, "ETH": 0.5})
+        self.assertTrue(self.all["GOLD_HOLD"].benchmark)
+        self.assertFalse(self.all["GOLD_TREND"].benchmark)
+        self.assertEqual(self.all["GOLD_TREND"].sleeves, {"PAXG": 0.5})  # the rest stays in cash
+        for s in self.all.values():
+            self.assertLessEqual(sum(s.sleeves.values()), 1.0)  # never more than the account (no leverage)
+
+    def test_hold_benchmark_always_holds(self):
+        h = strategies.Hold()
+        self.assertEqual(h.decide("DOGE", {"1d": bars([0.1, 0.05])}, {}, 0)[0], 1.0)
+        self.assertIn("holding since the start", h.describe("DOGE", {}, 0.12, {"exp": 1.0, "entry": 0.1}))
+
+    def test_sleeves_over_100_percent_are_refused(self):
+        cfg = dict(CFG, engine=dict(CFG["engine"], variants=[
+            {"name": "X", "base": "TREND_D1", "sleeves": {"SOL": 0.7, "XRP": 0.7}}]))
+        with self.assertRaises(ValueError):
+            strategies.build(cfg)
+
+    def test_memecoin_prices_are_readable(self):
+        closes = [0.00001 * 1.002 ** i for i in range(120)]  # PEPE-sized prices, rising
+        exp, info = self.all["MEME_TREND"].decide("PEPE", {"1d": bars(closes, step=24 * H)}, {}, 0)
+        self.assertEqual(exp, 1.0)
+        self.assertGreater(info["sma"], 0)  # not rounded away to 0.00
+        text = self.all["MEME_TREND"].describe("PEPE", info, closes[-1], {"exp": 1.0})
+        self.assertIn("0.0000", text)
+        self.assertNotIn("(0)", text)
 
     def test_only_trend_d1_variants_can_override_settings(self):
         cfg = dict(CFG, engine=dict(CFG["engine"], variants=[{"name": "X", "base": "TREND_H4", "overrides": {"sma_days": 5}}]))
