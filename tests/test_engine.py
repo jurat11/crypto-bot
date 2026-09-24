@@ -170,6 +170,22 @@ class Accounts(EngineCase):
         self.assertTrue(all(p[0] % 60_000 == 0 for p in pts))
 
 
+class VariantAccounts(EngineCase):
+    def test_variant_starts_with_its_own_cash_and_pays_its_own_fee(self):
+        cheap, dear = Stub(), Stub()
+        dear.name, dear.start_cash, dear.fee_rate = "STUB_HIGH_FEE", 20.0, 0.004
+        eng = self.engine([cheap, dear])
+        self.assertEqual(eng.accounts["STUB_HIGH_FEE"].s["start_cash"], 20.0)
+        self.assertEqual(eng.accounts["STUB_H1"].s["start_cash"], 15.0)
+        eng.tick()
+        fills = {f["account"]: f for f in self.store.recent_fills() if f["asset"] == "BTC" and f["account"] != HOLD}
+        for name, rate in (("STUB_H1", 0.001), ("STUB_HIGH_FEE", 0.004)):
+            self.assertAlmostEqual(fills[name]["fee"], fills[name]["notional"] * rate)
+        rows = eng.snapshot()["leaderboard"]
+        self.assertEqual({r["account"]: r["start_cash"] for r in rows}["STUB_HIGH_FEE"], 20.0)
+        self.assertEqual([r["pnl_pct"] for r in rows], sorted([r["pnl_pct"] for r in rows], reverse=True))
+
+
 class Decisions(EngineCase):
     def test_buys_on_closed_candle_and_writes_receipt(self):
         eng = self.engine()
@@ -190,6 +206,25 @@ class Decisions(EngineCase):
         self.assertIn("usd", json.loads(btc["orders"]))
         eth = [r for r in rec if r["asset"] == "ETH"][0]
         self.assertEqual(json.loads(eth["signal"])["action"], "none")
+
+    def test_buy_takes_the_nearest_quantity_step(self):
+        # 90% of a $7.50 sleeve is $6.75 = 0.0000799 BTC at 84,401. Rounding down would buy
+        # 0.00007 ($5.91); the nearest step 0.00008 costs $6.752, still under the $7.50 cap.
+        self.public.prices["BTCUSDT"] = 84_401.21
+        self.stub.want["BTC"] = 0.9
+        eng = self.engine()
+        eng.tick()
+        fill = [f for f in self.store.recent_fills() if f["account"] == "STUB_H1" and f["asset"] == "BTC"][0]
+        self.assertAlmostEqual(fill["qty"], 0.00008)
+
+    def test_nearest_step_never_breaks_the_per_asset_cap(self):
+        # 100% of the sleeve is $7.50 = 0.0000889 BTC; 0.00009 would cost $7.60 > the $7.50 cap
+        self.public.prices["BTCUSDT"] = 84_401.21
+        eng = self.engine()
+        eng.tick()
+        fill = [f for f in self.store.recent_fills() if f["account"] == "STUB_H1" and f["asset"] == "BTC"][0]
+        self.assertAlmostEqual(fill["qty"], 0.00008)
+        self.assertLessEqual(fill["notional"], 7.5)
 
     def test_decides_only_once_per_closed_candle(self):
         eng = self.engine()
@@ -338,7 +373,7 @@ class SSEPayload(EngineCase):
         self.assertAlmostEqual(snap["market"]["BTC"]["spread"], 0.01)
         rows = snap["leaderboard"]
         self.assertEqual({r["account"] for r in rows}, {HOLD, "STUB_H1"})
-        self.assertEqual([r["pnl_usd"] for r in rows], sorted([r["pnl_usd"] for r in rows], reverse=True))
+        self.assertEqual([r["pnl_pct"] for r in rows], sorted([r["pnl_pct"] for r in rows], reverse=True))
         for r in rows:
             for k in ("balance", "pnl_usd", "pnl_pct", "max_dd", "trades", "win_rate", "fees", "backtest"):
                 self.assertIn(k, r)

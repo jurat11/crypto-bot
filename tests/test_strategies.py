@@ -60,6 +60,41 @@ class TrendD1(unittest.TestCase):
             self.assertEqual(info["reason"], base_info["reason"])
 
 
+class Variants(unittest.TestCase):
+    def setUp(self):
+        self.all = {s.name: s for s in strategies.build(CFG)}
+
+    def test_variants_from_config(self):
+        self.assertEqual(set(self.all), {"TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1",
+                                         "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"})
+        self.assertEqual((self.all["TREND_D1"].start_cash, self.all["TREND_D1"].fee_rate), (15.0, 0.001))
+        self.assertEqual((self.all["D1_HIGH_FEE"].start_cash, self.all["D1_HIGH_FEE"].fee_rate), (20.0, 0.004))
+        self.assertEqual(self.all["D1_FAST"].base, "TREND_D1")
+        self.assertEqual(set(CFG["engine"]["strategies"]), set(self.all))
+
+    def test_all_in_skips_the_vol_dial(self):
+        closes = [100 * (1.06 if i % 2 else 0.95) * (1.004 ** i) for i in range(120)]  # wild uptrend
+        c = {"1d": bars(closes, step=24 * H)}
+        self.assertLess(self.all["TREND_D1"].decide("BTC", c, {}, 0)[0], 1.0)
+        self.assertEqual(self.all["D1_ALL_IN"].decide("BTC", c, {}, 0)[0], 1.0)
+
+    def test_fast_uses_sma20(self):
+        # 100 days flat at 100, then 25 days at 104: above SMA20 and SMA50, then back to 99 for 10 days
+        closes = [100.0] * 100 + [104.0] * 25 + [99.0] * 10
+        c = {"1d": bars(closes, step=24 * H)}
+        exp50, info50 = self.all["TREND_D1"].decide("BTC", c, {}, 0)
+        exp20, info20 = self.all["D1_FAST"].decide("BTC", c, {}, 0)
+        self.assertAlmostEqual(info20["sma"], (104.0 * 10 + 99.0 * 10) / 20)
+        self.assertEqual(exp20, 0.0)  # 99 is below the SMA20 (101.5)
+        self.assertAlmostEqual(info50["sma"], (100.0 * 15 + 104.0 * 25 + 99.0 * 10) / 50)
+        self.assertIn("SMA20", self.all["D1_FAST"].describe("BTC", info20, 99.0, {}))
+
+    def test_only_trend_d1_variants_can_override_settings(self):
+        cfg = dict(CFG, engine=dict(CFG["engine"], variants=[{"name": "X", "base": "TREND_H4", "overrides": {"sma_days": 5}}]))
+        with self.assertRaises(ValueError):
+            strategies.build(cfg)
+
+
 class TrendH4(unittest.TestCase):
     s = strategies.TrendH4()
 

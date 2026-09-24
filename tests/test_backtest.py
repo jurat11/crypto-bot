@@ -69,7 +69,8 @@ class Backtest(unittest.TestCase):
 
     def test_report_rising_market(self):
         rep = bt.run(self.up, CFG, self.periods)
-        self.assertEqual(set(rep["strategies"]), {"TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1"})
+        self.assertEqual(set(rep["strategies"]), {"TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1",
+                                                  "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"})
         self.assertGreater(rep["hold"]["oos"]["return"], 0)
         d1 = rep["strategies"]["TREND_D1"]
         self.assertGreater(d1["results"]["0.001"]["oos"]["return"], 0)
@@ -78,6 +79,27 @@ class Backtest(unittest.TestCase):
         text = bt.table(rep)
         self.assertIn("| TREND_D1 | 0.1% |", text)
         self.assertIn("Hold 50/50 BTC/ETH", text)
+
+    def test_day_week_year_ranges(self):
+        rep = bt.run(self.up, CFG, self.periods)
+        h = rep["strategies"]["TREND_D1"]["results"]["0.001"]["oos"]["horizons"]
+        self.assertEqual(set(h), {"day", "week"})  # the 160-day test period has no full year
+        for x in h.values():
+            self.assertLessEqual(x["p10"], x["median"])
+            self.assertLessEqual(x["median"], x["p90"])
+            self.assertTrue(0 <= x["loss_share"] <= 1)
+        self.assertEqual(h["day"]["windows"], 159)
+        self.assertIn("horizons", rep["hold"]["oos"])
+        self.assertEqual(rep["strategies"]["D1_HIGH_FEE"]["demo_fee"], "0.004")
+
+    def test_horizon_math(self):
+        series = [(k * D, 1.0 + 0.01 * k) for k in range(10)]  # +1% of the start every day
+        h = bt.horizons(series)
+        self.assertEqual(h["day"]["loss_share"], 0.0)
+        self.assertEqual(h["week"]["windows"], 3)  # days 0->7, 1->8, 2->9
+        self.assertAlmostEqual(h["week"]["p10"], 1.09 / 1.02 - 1)  # the weakest week
+        self.assertAlmostEqual(h["week"]["median"], 1.08 / 1.01 - 1)
+        self.assertAlmostEqual(h["week"]["p90"], 1.07 / 1.00 - 1)  # the best week
 
     def test_losing_strategy_is_flagged(self):
         rep = bt.run(self.down, CFG, self.periods)

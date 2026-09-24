@@ -74,6 +74,8 @@ class Engine:
         self.clock = clock
         self.market_label = market_label
         self.fee = self.ecfg["fee_rate"]
+        self.fees = {st.name: getattr(st, "fee_rate", None) or self.fee for st in strategy_list}
+        self.start_cash = {st.name: getattr(st, "start_cash", None) or self.ecfg["start_cash"] for st in strategy_list}
         self.risk_cfg = {"risk": self.ecfg["risk"]}
         self.delay_ms = int(self.ecfg.get("decision_delay_seconds", 5) * 1000)
         self.lock = threading.RLock()
@@ -95,11 +97,15 @@ class Engine:
             if name in saved:
                 out[name] = Account(saved[name])
             else:
-                out[name] = Account.create(name, self.ecfg["start_cash"], self.now_ms())
+                cash = self.start_cash.get(name, self.ecfg["start_cash"])
+                out[name] = Account.create(name, cash, self.now_ms())
                 self.store.save_account(name, out[name].s)
-                self.event(name, "account", f"{self.label(name)} demo account opened with ${self.ecfg['start_cash']:.2f}")
+                self.event(name, "account", f"{self.label(name)} demo account opened with ${cash:.2f}")
             self.risk_state[name] = {"ok": True, "reasons": [], "checked_ms": None}
         return out
+
+    def fee_for(self, name):
+        return self.fees.get(name, self.fee)
 
     def label(self, name):
         return LABELS.get(name, name)
@@ -176,19 +182,31 @@ class Engine:
         return problems
 
     # ---------- orders ----------
-    def market_order(self, acct, asset, side, usd=None, qty=None):
+    def market_order(self, acct, asset, side, usd=None, qty=None, max_usd=None):
         """Fill against the live book. Returns (status, sim, why); status is
-        'filled', 'skipped' (exchange rules; not retried) or 'retry' (data problem)."""
+        'filled', 'skipped' (exchange rules; not retried) or 'retry' (data problem).
+
+        A buy aims at `usd`. The exchange only accepts whole quantity steps (0.00001 BTC is
+        about $0.85), so it takes the nearest step as long as that costs no more than
+        `max_usd` (the per-asset cap) and the cash available; otherwise it rounds down."""
         try:
             book = self.public.depth(sym(asset), 100)
             filters = self.public.symbol_filters(sym(asset)) if self.ecfg.get("apply_exchange_filters", True) else None
         except Exception as e:
             return "retry", None, f"order book unavailable ({str(e)[:80]})"
+        fee = self.fee_for(acct.name)
         if side == "BUY":
             usd = min(usd, acct.s["cash"])
             if usd <= 0:
                 return "skipped", None, "no cash"
-            qty = simulate_market_order(book, "BUY", self.fee, quote_qty=usd)["qty"]
+            qty = simulate_market_order(book, "BUY", fee, quote_qty=usd)["qty"]
+            if filters:
+                limit = min(acct.s["cash"], usd if max_usd is None else max_usd)
+                near = float(filters.round_qty(qty + float(filters.step_size) / 2))
+                if near > float(filters.round_qty(qty)):
+                    alt = simulate_market_order(book, "BUY", fee, base_qty=near)
+                    if alt["complete"] and alt["notional"] <= limit + 1e-9:
+                        qty = near
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2 if book["bids"] and book["asks"] else None
         if filters:
             qty, why = filters.market_qty(qty, mid or 0)
@@ -196,11 +214,11 @@ class Engine:
                 return "skipped", None, why
         if not qty or qty <= 0:
             return "skipped", None, "nothing to trade"
-        sim = simulate_market_order(book, side, self.fee, base_qty=qty)
+        sim = simulate_market_order(book, side, fee, base_qty=qty)
         if not sim["complete"]:
             return "retry", None, "order book too thin for this order"
         if side == "BUY" and sim["notional"] > acct.s["cash"] + 1e-9:
-            sim = simulate_market_order(book, "BUY", self.fee,
+            sim = simulate_market_order(book, "BUY", fee,
                                         base_qty=float(filters.round_qty(qty * 0.995)) if filters else qty * 0.995)
         return "filled", sim, ""
 
@@ -224,7 +242,7 @@ class Engine:
         if self.testnet and acct.name == self.ecfg.get("testnet_strategy"):
             job = {"account": acct.name, "asset": asset, "side": side, "decision_ms": decision_ms, "reason": reason}
             if side == "BUY":
-                job["usd"] = sim["notional"]
+                job["usd"], job["qty"] = sim["notional"], sim["qty"]
             elif exposure == 0 or not held_before:
                 job["fraction"] = 1.0  # a full exit sells the whole testnet position (demo keeps sub-step dust)
             else:
@@ -320,7 +338,9 @@ class Engine:
             return "done"
         self.event(acct.name, "order", f"{strat.name} {asset} market {side} "
                    + (f"${order['usd']:.2f}" if side == "BUY" else f"{order['qty']:.6f} {asset}") + f": {reason}")
-        status, sim, why = self.market_order(acct, asset, side, usd=order.get("usd"), qty=order.get("qty"))
+        cap_room = self.risk_cfg["risk"]["max_weight_per_asset"] * eq - acct.value(asset, prices)
+        status, sim, why = self.market_order(acct, asset, side, usd=order.get("usd"), qty=order.get("qty"),
+                                             max_usd=cap_room if side == "BUY" else None)
         if status == "filled":
             self.book_fill(acct, asset, side, sim, reason, decision_ms, exposure=exp)
             self.store.add_receipt(acct.name, asset, decision_ms, info, signal, risk_r, order,
@@ -352,8 +372,10 @@ class Engine:
                 r["backtest"], r["backtest_why"] = bt["verdict"], bt["why"]
                 r["timeframe"], r["rule"] = self.strategies[name].timeframe, self.strategies[name].rule
             r["testnet"] = bool(self.testnet) and name == self.ecfg.get("testnet_strategy")
+            r["start_cash"], r["fee_rate"] = a.s["start_cash"], self.fee_for(name)
+            r["note"] = getattr(self.strategies.get(name), "note", "") if name != HOLD else ""
             rows.append(r)
-        rows.sort(key=lambda r: -r["pnl_usd"])
+        rows.sort(key=lambda r: -r["pnl_pct"])  # accounts start with $15 or $20, so compare in %
         return rows
 
     def states(self, prices, now):
@@ -428,6 +450,7 @@ class Engine:
 
     def history(self):
         return {"accounts": {n: self.label(n) for n in self.accounts},
+                "start": {n: a.s["start_cash"] for n, a in self.accounts.items()},
                 "equity": self.store.equity_history()}
 
     def press_stop(self, who="dashboard"):

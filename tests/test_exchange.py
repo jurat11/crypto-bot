@@ -212,6 +212,13 @@ class TestnetSafety(unittest.TestCase):
         self.assertEqual(r3["status"], "filled")
         self.assertEqual(fake.orders[1][2], 0.00017)
 
+    def test_buy_mirrors_the_demo_quantity(self):
+        fake = FakeTestnet()
+        tr = testnet.TestnetTrader(fake, testnet.TestnetGate(fake, True), self.store)
+        r = tr.mirror("TREND_D1", "BTC", "BUY", 5, usd=6.75, qty=0.00008)
+        self.assertEqual(r["status"], "filled")
+        self.assertEqual(fake.orders[0][2:], (0.00008, None))  # quantity, not quoteOrderQty
+
     def test_timeout_is_reconciled_not_resent(self):
         fake = FakeTestnet(timeout_on_order=True)
         tr = testnet.TestnetTrader(fake, testnet.TestnetGate(fake, True), self.store)

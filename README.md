@@ -40,6 +40,15 @@ The bot runs **on your computer**. If the Mac is shut down, asleep, or the Termi
 | MEANREV_H1 | 1h close | Buy when RSI(2) on 1h is below 5 while price is above the daily SMA50. Sell when RSI(2) is above 70, after 12 hours, or at a 3% stop. |
 | Hold 50/50 | none | Buys $7.50 BTC and $7.50 ETH at start and never trades again. |
 
+**Variations ($20 each, for comparing short-term):** three copies of TREND_D1 that each change one thing, set in `engine.variants` in `config.json`:
+| Account | What changes | Why it's there |
+|---|---|---|
+| D1_ALL_IN | no volatility dial: always the full sleeve when the trend is up | riskier: bigger positions, bigger swings |
+| D1_FAST | SMA20 instead of SMA50 | riskier and more trades: switches more often and pays more fees |
+| D1_HIGH_FEE | pays 0.4% per trade instead of 0.1% | shows what a small account on a US exchange pays |
+
+They go through the same backtest before they trade. None of them uses leverage.
+
 Each strategy runs a 50% BTC and a 50% ETH sleeve and decides **only on closed candles of its own timeframe**. There is no leverage, margin, futures, martingale, averaging down or grid logic anywhere.
 
 **Backtest first.** `python3 backtest_strategies.py` runs the same decision code on Binance hourly candles since 2017. It reports **in-sample 2018-2022** (where rules are chosen) against **out-of-sample 2023 to today** (never used for choosing), at **0.1% and 0.4% fees**. A strategy that loses money out of sample at either fee still runs in demo, but the dashboard flags it **FAILED BACKTEST**. Parameters are never tuned to make a strategy pass.
@@ -47,16 +56,17 @@ Each strategy runs a 50% BTC and a 50% ETH sleeve and decides **only on closed c
 ## What each panel shows
 1. **Banner** (top): always "DEMO: no real money". With TESTNET=1 there is a second banner: "TESTNET: fake funds, real orders." when it works, or the reason it does not (for example "blocked by exchange location"). A red "STOPPED" banner appears while the STOP file exists.
 2. **Leaderboard:** all demo accounts, sorted by P&L. For each: balance to 4 decimals (it flashes green or red as prices move), P&L in $ and %, max drawdown since start, trade count, win rate (share of sells that made money after fees), and fees paid. Badges: *FAILED BACKTEST / backtest passed / not backtested*, *benchmark*, and *TESTNET* for the strategy mirrored to testnet. Under each name you see its cash and the $ value held in BTC and ETH.
-3. **Equity since start:** every account on one chart, one point per minute, with the last point moving every second. Hover to read all accounts at one time. The leaderboard shows the same numbers as a table.
+3. **P&L since start (%):** every account on one chart. It uses percent because accounts start with $15 or $20. There is one point per minute, and the last point moves every second. Hover to read every account at one time. The leaderboard shows the same numbers as a table.
 4. **Backtest before demo:** the in-sample (2018-22) and out-of-sample (2023+) table for each strategy at 0.1% and 0.4% fees, next to Hold 50/50, with the PASSED / FAILED BACKTEST verdict.
-5. **Live prices:** BTC and ETH mid price, bid, ask, spread in $ and basis points, where the price came from (websocket or REST fallback), and how old it is.
-6. **What each strategy is doing:** one plain-English line per coin, for example "BTC: waiting, BTC is 1.8% below the 48h high (86,000)", plus the time of its next decision.
-7. **Risk per account:** green OK or red BLOCKED with the reasons: kill switch, stale prices (older than 3 minutes), daily loss over 8% (UTC day), drawdown over 35%. A block stops buys. Sells that reduce risk still go through. Risk is checked every minute and again right before every buy.
-8. **STOP button:** after you confirm, it creates the `STOP` file, and new buys halt at once (the risk panel turns red within a minute). Delete the `STOP` file to resume.
-9. **Activity:** every check, signal, order, fill, risk event and testnet result, with UTC timestamps. The chips filter it; the once-a-minute "checks" are hidden unless you turn them on.
-10. **Orders & fills:** every demo and testnet order: quantity, average fill price, $ value, fee, and slippage against the mid price. For testnet fills, **"Real vs sim slip"** compares what the exchange actually filled with what the simulator predicted from the same testnet order book. Testnet prices are labelled TESTNET, because testnet prices can differ from the real market.
+5. **What history says:** for each account, in dollars at its own size and fee: the typical (median) day, week and year from the 2023-2026 backtest, the range that 8 out of 10 periods fell in, how often each period lost money, and trades per week. **This is history, not a forecast.** 2023-2026 was mostly a rising market for crypto, and the year figures rest on only about three separate years.
+6. **Live prices:** BTC and ETH mid price, bid, ask, spread in $ and basis points, where the price came from (websocket or REST fallback), and how old it is.
+7. **What each strategy is doing:** one plain-English line per coin, for example "BTC: waiting, BTC is 1.8% below the 48h high (86,000)", plus the time of its next decision.
+8. **Risk per account:** green OK or red BLOCKED with the reasons: kill switch, stale prices (older than 3 minutes), daily loss over 8% (UTC day), drawdown over 35%. A block stops buys. Sells that reduce risk still go through. Risk is checked every minute and again right before every buy.
+9. **STOP button:** after you confirm, it creates the `STOP` file, and new buys halt at once (the risk panel turns red within a minute). Delete the `STOP` file to resume.
+10. **Activity:** every check, signal, order, fill, risk event and testnet result, with UTC timestamps. The chips filter it; the once-a-minute "checks" are hidden unless you turn them on.
+11. **Orders & fills:** every demo and testnet order: quantity, average fill price, $ value, fee, and slippage against the mid price. For testnet fills, **"Real vs sim slip"** compares what the exchange actually filled with what the simulator predicted from the same testnet order book. Testnet prices are labelled TESTNET, because testnet prices can differ from the real market.
 
-Only realized and marked-to-market numbers after fees are shown. Holdings are valued at the live mid price, and fees already paid are deducted. There are no projections.
+Balances are realized and marked-to-market numbers after fees. Holdings are valued at the live mid price, and fees already paid are deducted. The only forward-looking numbers are the "what history says" ranges, which come from the backtest and are labelled as history.
 
 ## Getting testnet keys (fake money)
 1. Go to https://testnet.binance.vision and click **Log In with GitHub**.
@@ -78,7 +88,7 @@ How testnet orders stay safe:
 
 ## What $15 really buys
 - **Binance's minimum order is $5.** Each coin's sleeve is $7.50, so a vol-dial position under ~67% (under $5) cannot be placed, and TREND_D1's small 10% rebalances ($0.75) are skipped. The activity feed says so each time.
-- **Quantities round down to the exchange step** (0.00001 BTC, about $0.85 at today's price, and 0.0001 ETH, about $0.27). So a $7.50 BTC buy invests about $6.90, and selling can leave a few cents of "dust".
+- **Quantities come in exchange steps** (0.00001 BTC, about $0.85 at today's price, and 0.0001 ETH, about $0.27). A buy takes the step nearest its target, as long as that stays under the 50% per-coin cap; otherwise it rounds down. Selling can leave a few cents of "dust".
 - Every round trip pays about 0.2% in fees plus the spread. The leaderboard shows fees paid, so you can see how much they add up to.
 
 ## Files

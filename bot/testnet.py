@@ -117,7 +117,7 @@ class TestnetTrader:
                             status=status, reason=reason, **extra)
         return {"status": status, "reason": reason, **extra}
 
-    def mirror(self, account, asset, side, decision_ms, usd=None, fraction=None, reason=""):
+    def mirror(self, account, asset, side, decision_ms, usd=None, fraction=None, reason="", qty=None):
         """Send the testnet copy of a demo order. Returns a result dict; never raises."""
         side = side.upper()
         symbol = f"{asset}USDT"
@@ -130,7 +130,13 @@ class TestnetTrader:
             filters = self.adapter.symbol_filters(symbol)
             book = self.adapter.depth(symbol, 100)
             mid = mid_price(book)
-            if side == "BUY":
+            if side == "BUY" and qty:  # same coin quantity as the demo fill
+                q, why = filters.market_qty(qty, mid or 0)
+                if not q:
+                    return self._record(account, asset, side, "skipped", why)
+                req = {"quantity": q}
+                sim = simulate_market_order(book, side, SIM_FEE, base_qty=q)
+            elif side == "BUY":
                 ok, why = filters.check_quote(usd or 0)
                 if not ok:
                     return self._record(account, asset, side, "skipped", why)

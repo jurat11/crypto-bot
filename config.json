@@ -20,7 +20,15 @@
   "engine": {
     "start_cash": 15.0,
     "fee_rate": 0.001,
-    "strategies": ["TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1"],
+    "strategies": ["TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1", "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"],
+    "variants": [
+      {"name": "D1_ALL_IN", "base": "TREND_D1", "start_cash": 20.0, "overrides": {"vol_target": 0},
+       "note": "riskier: TREND_D1 without the volatility dial, always the full sleeve when above SMA50"},
+      {"name": "D1_FAST", "base": "TREND_D1", "start_cash": 20.0, "overrides": {"sma_days": 20},
+       "note": "riskier, more trades: SMA20 instead of SMA50, so it switches more often and pays more fees"},
+      {"name": "D1_HIGH_FEE", "base": "TREND_D1", "start_cash": 20.0, "fee_rate": 0.004,
+       "note": "same trades as TREND_D1 but pays 0.4% per trade, like a small account on a US exchange"}
+    ],
     "testnet_strategy": "TREND_D1",
     "apply_exchange_filters": true,
     "rest_poll_seconds": 5,

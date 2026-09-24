@@ -94,11 +94,14 @@ class Strategy:
 
 class TrendD1(Strategy):
     name, timeframe = "TREND_D1", "1d"
-    rule = "Daily close above SMA50 = hold, sized by a 40% volatility dial; below = cash."
 
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.needs = {"1d": max(cfg["sma_days"], cfg["vol_lookback_days"] + 1) + 5}
+    def __init__(self, cfg, name="TREND_D1", overrides=None):
+        self.cfg = dict(cfg, **(overrides or {}))
+        self.name = name
+        c = self.cfg
+        self.needs = {"1d": max(c["sma_days"], c["vol_lookback_days"] + 1) + 5}
+        dial = f"sized by a {c['vol_target']:.0%} volatility dial" if c["vol_target"] else "always the full sleeve (no volatility dial)"
+        self.rule = f"Daily close above SMA{c['sma_days']} = hold, {dial}; below = cash."
 
     def decide(self, asset, candles, pos, now_ms):
         closes = [r[4] for r in candles["1d"]]
@@ -112,10 +115,11 @@ class TrendD1(Strategy):
         if "sma" not in info:
             return f"{asset}: {info.get('reason', 'waiting for data')}"
         d = _pct(price, info["sma"])
+        n = self.cfg["sma_days"]
         if pos.get("exp", 0) > 0:
-            return (f"{asset}: holding {pos['exp']:.0%} of its sleeve, price is {d:+.1%} vs the SMA50 "
+            return (f"{asset}: holding {pos['exp']:.0%} of its sleeve, price is {d:+.1%} vs the SMA{n} "
                     f"({info['sma']:,.0f}); sells if a daily close ends below it")
-        return (f"{asset}: in cash, price is {d:+.1%} vs the SMA50 ({info['sma']:,.0f}); "
+        return (f"{asset}: in cash, price is {d:+.1%} vs the SMA{n} ({info['sma']:,.0f}); "
                 f"buys if a daily close ends above it")
 
 
@@ -259,5 +263,30 @@ class MeanRevH1(Strategy):
         return s
 
 
+BASES = {"TREND_D1": TrendD1, "TREND_H4": TrendH4, "BREAKOUT_H1": BreakoutH1, "MEANREV_H1": MeanRevH1}
+
+
 def build(cfg):
-    return [TrendD1(cfg), TrendH4(), BreakoutH1(), MeanRevH1()]
+    """The four strategies plus the variants in config.json engine.variants.
+
+    A variant is a copy of a base strategy with its own name, starting cash and fee.
+    TREND_D1 variants may also override its settings (sma_days, vol_target, ...)."""
+    e = cfg.get("engine", {})
+    out = [TrendD1(cfg), TrendH4(), BreakoutH1(), MeanRevH1()]
+    for s in out:
+        s.start_cash, s.fee_rate, s.note, s.base = e.get("start_cash", 15.0), e.get("fee_rate", 0.001), "", s.name
+    for v in e.get("variants", []):
+        if v["base"] == "TREND_D1":
+            s = TrendD1(cfg, v["name"], v.get("overrides"))
+        else:
+            if v.get("overrides"):
+                raise ValueError(f"{v['name']}: only TREND_D1 variants can override settings")
+            s = BASES[v["base"]]()
+            s.name = v["name"]
+        s.start_cash = v.get("start_cash", e.get("start_cash", 15.0))
+        s.fee_rate = v.get("fee_rate", e.get("fee_rate", 0.001))
+        s.note, s.base = v.get("note", ""), v["base"]
+        if s.fee_rate != e.get("fee_rate", 0.001):
+            s.rule += f" Pays {s.fee_rate:.1%} per trade."
+        out.append(s)
+    return out

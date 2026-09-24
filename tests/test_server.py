@@ -89,7 +89,7 @@ class BacktestGate(unittest.TestCase):
         from bot.server import wired_strategies
         wired, held = wired_strategies(CFG, {"TREND_D1": {"verdict": "PASSED", "why": ""}})
         self.assertEqual([s.name for s in wired], ["TREND_D1"])
-        self.assertEqual(held, ["TREND_H4", "BREAKOUT_H1", "MEANREV_H1"])
+        self.assertEqual(held, ["TREND_H4", "BREAKOUT_H1", "MEANREV_H1", "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"])
 
     def test_first_launch_runs_the_backtest(self):
         from bot import server

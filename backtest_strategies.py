@@ -167,6 +167,24 @@ def stats(series):
             "start": day(series[0][0]), "end": day(series[-1][0])}
 
 
+HORIZONS = {"day": 1, "week": 7, "year": 365}
+
+
+def horizons(series):
+    """How the account changed over every 1-day, 7-day and 365-day window (stepping one day).
+    These are ranges from history for the dashboard, not a forecast."""
+    daily = [e for t, e in series if t % D == 0]
+    out = {}
+    for name, h in HORIZONS.items():
+        rets = sorted(daily[i + h] / daily[i] - 1 for i in range(len(daily) - h))
+        if not rets:
+            continue
+        q = lambda p: rets[min(len(rets) - 1, int(p * len(rets)))]
+        out[name] = {"p10": q(0.10), "median": q(0.50), "p90": q(0.90), "mean": sum(rets) / len(rets),
+                     "loss_share": sum(1 for r in rets if r < 0) / len(rets), "windows": len(rets)}
+    return out
+
+
 def evaluate(paths, weights, fee, periods):
     """paths: {asset: exposure path}. Returns {period_name: stats + trades + win rate}."""
     sl = {a: sleeve(p, fee) for a, p in paths.items()}
@@ -182,6 +200,8 @@ def evaluate(paths, weights, fee, periods):
         exp_sum = sum(e for a, p in paths.items() for (t, _, e) in p if t0 <= t < t1)
         n = sum(1 for a, p in paths.items() for (t, _, _) in p if t0 <= t < t1)
         st["time_invested"] = exp_sum / n if n else 0.0
+        if name == "oos":
+            st["horizons"] = horizons(series)
         out[name] = st
     return out
 
@@ -201,7 +221,8 @@ def run(hist, cfg, periods=None):
         paths = {a: exposure_path(s, a, hist[a]) for a in weights}
         res = {str(fee): evaluate(paths, weights, fee, periods) for fee in FEES}
         v, why = verdict(res)
-        report["strategies"][s.name] = {"verdict": v, "why": why, "rule": s.rule, "results": res}
+        report["strategies"][s.name] = {"verdict": v, "why": why, "rule": s.rule, "results": res,
+                                        "demo_fee": str(getattr(s, "fee_rate", FEES[0]))}
     hold = {a: [(r[0] + H, r[4], 1.0) for r in hist[a]] for a in weights}
     report["hold"] = evaluate(hold, weights, 0.0, periods)
     return report

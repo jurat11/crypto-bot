@@ -11,7 +11,7 @@
   --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f3f2ee;
   --ink: #0b0b0b; --ink-2: #52514e; --muted: #6f6d68;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
   --good: #0ca30c; --good-ink: #006300; --warning: #fab219; --critical: #d03b3b; --critical-ink: #b42a2a;
   --good-wash: rgba(12,163,12,0.10); --critical-wash: rgba(208,59,59,0.10); --warning-wash: rgba(250,178,25,0.16);
   --accent: #2a78d6;
@@ -22,7 +22,7 @@
     --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
     --ink: #ffffff; --ink-2: #c3c2b7; --muted: #9a9890;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
     --good-ink: #0ca30c; --critical-ink: #e66767;
     --good-wash: rgba(12,163,12,0.16); --critical-wash: rgba(208,59,59,0.20); --warning-wash: rgba(250,178,25,0.14);
     --accent: #3987e5;
@@ -33,7 +33,7 @@
   --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
   --ink: #ffffff; --ink-2: #c3c2b7; --muted: #9a9890;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --good-ink: #0ca30c; --critical-ink: #e66767;
   --good-wash: rgba(12,163,12,0.16); --critical-wash: rgba(208,59,59,0.20); --warning-wash: rgba(250,178,25,0.14);
   --accent: #3987e5;
@@ -128,7 +128,7 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
   </div>
 
   <section class="card" style="margin-bottom:14px">
-    <h2>Leaderboard · $15 each, marked to market every second, after fees</h2>
+    <h2>Leaderboard · sorted by P&amp;L %, marked to market every second, after fees</h2>
     <div class="scroll-x">
       <table id="board">
         <thead><tr>
@@ -142,9 +142,9 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
 
   <div class="grid g-2">
     <section class="card">
-      <h2>Equity since start</h2>
+      <h2>P&amp;L since start, % (accounts start with $15 or $20)</h2>
       <div class="legend" id="legend"></div>
-      <div class="chart-box"><canvas id="chart" role="img" aria-label="Equity of every demo account since start; the leaderboard above has the same numbers as a table"></canvas></div>
+      <div class="chart-box"><canvas id="chart" role="img" aria-label="Profit or loss of every demo account since its start, in percent; the leaderboard above has the same numbers as a table"></canvas></div>
       <div class="sub" id="chart-note">One point per minute; the last point moves every second.</div>
     </section>
     <section class="card">
@@ -158,6 +158,12 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
     <h2>Backtest before demo · in-sample 2018-22 vs out-of-sample 2023+</h2>
     <div class="scroll-x" id="backtest"><div class="empty">Loading…</div></div>
     <div class="sub" id="backtest-note" style="margin-top:8px">Same decision code as the live engine, run on Binance hourly candles. A strategy that loses money out of sample at either fee is flagged FAILED BACKTEST; it still runs in demo. Parameters were never tuned to pass. Past results do not predict future ones.</div>
+  </section>
+
+  <section class="card" style="margin-bottom:14px">
+    <h2>What history says: a typical day, week and year</h2>
+    <div class="scroll-x" id="expect"><div class="empty">Waiting for the backtest…</div></div>
+    <div class="sub" style="margin-top:8px">Not a promise or a forecast. These are ranges from the 2023–2026 backtest, at each account's own fee and size: the typical (median) result, and the range 8 out of 10 periods fell in. 2023–2026 was mostly a rising market for crypto; a falling one would look worse. The year figures rest on only about three separate years of data. Real results can land outside these ranges.</div>
   </section>
 
   <div class="grid g-half">
@@ -193,7 +199,7 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
     </section>
   </div>
 
-  <footer>Only realized and marked-to-market numbers after fees are shown: holdings are valued at the live mid price and every fee paid is already deducted. No projections. Past results do not predict future ones.</footer>
+  <footer>Balances and P&amp;L are realized and marked-to-market numbers after fees: holdings are valued at the live mid price and every fee paid is already deducted. The only forward-looking numbers are the "what history says" ranges, taken from the backtest and labelled as such. Past results do not predict future ones.</footer>
 </div>
 
 <dialog id="stop-dlg">
@@ -207,7 +213,8 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
 
 <script>
 "use strict";
-const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5" };
+const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
+               D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const colorOf = (acct) => css(SLOT[acct] || "--muted");
 const $ = (id) => document.getElementById(id);
@@ -252,7 +259,8 @@ function renderBoard(rows) {
       el("span", { class: "key", style: `background:${colorOf(r.account)}` }),
       el("span", { class: "acct" }, r.label), ...badges,
       el("div", { class: "sub", style: "margin-left:22px" },
-        `${r.timeframe ? r.timeframe + " · " : ""}cash ${fmtUsd(r.cash)} · BTC ${fmtUsd(hold.BTC)} · ETH ${fmtUsd(hold.ETH)}`));
+        `${r.timeframe ? r.timeframe + " · " : ""}started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)} · cash ${fmtUsd(r.cash)} · BTC ${fmtUsd(hold.BTC)} · ETH ${fmtUsd(hold.ETH)}`),
+      r.note ? el("div", { class: "sub", style: "margin-left:22px" }, r.note) : null);
     acct.title = r.rule || "";
     return el("tr", {},
       el("td", { class: "num" }, i + 1), acct,
@@ -354,7 +362,8 @@ function renderFills(fills) {
 }
 
 // ---------- equity chart ----------
-let chart = null, history = null, labels = {};
+let chart = null, history = null, labels = {}, starts = {};
+const toPoint = (acct, x, bal) => ({ x, y: (bal / (starts[acct] || 15) - 1) * 100, bal });
 function datasetFor(acct, pts) {
   const c = colorOf(acct);
   return { label: labels[acct] || acct, account: acct, data: pts, borderColor: c, backgroundColor: c,
@@ -385,7 +394,7 @@ function buildChart() {
           itemSort: (a, b) => b.parsed.y - a.parsed.y,
           callbacks: {
             title: (items) => items.length ? new Date(items[0].parsed.x).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "",
-            label: (it) => ` ${fmtUsd(it.parsed.y, 4)}  ${it.dataset.label}`,
+            label: (it) => ` ${it.parsed.y >= 0 ? "+" : ""}${it.parsed.y.toFixed(3)}%  ${fmtUsd(it.raw.bal, 4)}  ${it.dataset.label}`,
             labelPointStyle: () => ({ pointStyle: "line", rotation: 0 }),
           } },
       },
@@ -399,7 +408,7 @@ function buildChart() {
                // enough decimals that neighbouring ticks never print the same number
                const step = t.length > 1 ? Math.abs(t[1].value - t[0].value) : 1;
                const d = Math.min(6, Math.max(2, Math.ceil(-Math.log10(step || 1))));
-               return "$" + v.toFixed(d);
+               return (v > 0 ? "+" : "") + v.toFixed(d) + "%";
              } } },
       },
     },
@@ -413,9 +422,9 @@ function renderLegend() {
 async function loadHistory() {
   try {
     const h = await (await fetch("/api/history")).json();
-    labels = h.accounts; history = h.equity; renderLegend();
+    labels = h.accounts; history = h.equity; starts = h.start || {}; renderLegend();
     if (!chart) return;
-    chart.data.datasets = Object.keys(labels).map((a) => datasetFor(a, (history[a] || []).map(([x, y]) => ({ x, y }))));
+    chart.data.datasets = Object.keys(labels).map((a) => datasetFor(a, (history[a] || []).map(([x, bal]) => toPoint(a, x, bal))));
     chart.update("none");
   } catch (e) { /* the stream keeps the numbers live; retry on the next interval */ }
 }
@@ -423,9 +432,10 @@ function liveChartPoint(snap) {
   if (!chart || !snap.leaderboard.length) return;
   for (const r of snap.leaderboard) {
     let ds = chart.data.datasets.find((d) => d.account === r.account);
+    starts[r.account] = r.start_cash;
     if (!ds) { labels[r.account] = r.label; ds = datasetFor(r.account, []); chart.data.datasets.push(ds); renderLegend(); }
-    const pts = ds.data, last = pts[pts.length - 1];
-    if (last && last.live) { last.x = snap.ts; last.y = r.balance; } else pts.push({ x: snap.ts, y: r.balance, live: true });
+    const pts = ds.data, last = pts[pts.length - 1], pt = toPoint(r.account, snap.ts, r.balance);
+    if (last && last.live) Object.assign(last, pt); else pts.push({ ...pt, live: true });
   }
   chart.update("none");
 }
@@ -435,7 +445,9 @@ async function loadBacktest() {
   let rep = {};
   try { rep = await (await fetch("/api/backtest")).json(); } catch (e) { return; }
   const box = $("backtest");
+  lastRep = rep; renderExpect();
   if (!rep.strategies) {
+    $("expect").replaceChildren(el("div", { class: "empty" }, "Appears after the first backtest."));
     box.replaceChildren(el("div", { class: "empty" }, "No backtest yet. It runs automatically the first time the server starts, or run: python3 backtest_strategies.py"));
     return;
   }
@@ -462,6 +474,42 @@ async function loadBacktest() {
   if (h) $("backtest-note").textContent = `In-sample ${h.is.start} to ${h.is.end}, out-of-sample ${h.oos.start} to ${h.oos.end}, generated ${String(rep.generated_utc || "").replace("T", " ").slice(0, 16)} UTC. ` + $("backtest-note").textContent;
 }
 
+// ---------- what history says ----------
+let lastRep = null, lastBoard = {};
+function renderExpect() {
+  const rep = lastRep;
+  if (!rep || !rep.strategies) return;
+  const board = lastBoard;
+  const names = Object.keys(rep.strategies).filter((n) => !Object.keys(board).length || board[n]);
+  const usd = (x) => (x >= 0 ? "+$" : "-$") + Math.abs(x).toFixed(2);
+  const rows = [];
+  const add = (name, label, r, start) => {
+    const hz = (r && r.oos && r.oos.horizons) || {};
+    const weeks = r && r.oos.start ? (new Date(r.oos.end) - new Date(r.oos.start)) / (7 * 86400000) : 0;
+    const perWeek = weeks && r.oos.trades != null ? (r.oos.trades / weeks).toFixed(1) : "–";
+    const cellFor = (k) => {
+      const x = hz[k];
+      if (!x) return el("td", { class: "num" }, "–");
+      return el("td", { class: "num" }, el("div", { class: sgnClass(x.median), style: "font-weight:650" }, usd(x.median * start)),
+        el("div", { class: "sub" }, `${usd(x.p10 * start)} to ${usd(x.p90 * start)}`));
+    };
+    const lose = ["day", "week", "year"].map((k) => hz[k] ? `${k} ${Math.round(hz[k].loss_share * 100)}%` : null).filter(Boolean).join(" · ");
+    rows.push(el("tr", {},
+      el("td", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, label)),
+      el("td", { class: "num" }, fmtUsd(start)), el("td", { class: "num" }, perWeek),
+      cellFor("day"), cellFor("week"), cellFor("year"), el("td", { class: "sub" }, lose || "–")));
+  };
+  for (const n of names) {
+    const st = rep.strategies[n], b = board[n] || {};
+    const fee = st.demo_fee || "0.001";
+    add(n, n, st.results[fee] || Object.values(st.results)[0], b.start_cash || 15);
+  }
+  if (rep.hold) add("HOLD_50_50", "Hold 50/50 BTC/ETH", rep.hold, (board.HOLD_50_50 || {}).start_cash || 15);
+  const head = ["Account", "Start", "Trades / week", "A day", "A week", "A year", "How often it lost money"];
+  $("expect").replaceChildren(el("table", {}, el("thead", {}, el("tr", {}, ...head.map((x, i) => el("th", { class: i > 0 && i < 6 ? "num" : "" }, x)))),
+    el("tbody", {}, ...rows)));
+}
+
 // ---------- stream ----------
 let lastMsg = 0;
 function onSnapshot(s) {
@@ -470,6 +518,9 @@ function onSnapshot(s) {
   $("live").className = "live on";
   $("live-text").textContent = `live · ${utc(s.ts)} UTC`;
   renderBanners(s); renderBoard(s.leaderboard); renderPrices(s.market);
+  if (s.leaderboard.length && Object.keys(lastBoard).length !== s.leaderboard.length) {
+    lastBoard = Object.fromEntries(s.leaderboard.map((r) => [r.account, r])); renderExpect();
+  }
   renderStates(s.states); renderRisk(s.risk); renderFeed(s.feed); renderFills(s.fills);
   liveChartPoint(s);
 }
