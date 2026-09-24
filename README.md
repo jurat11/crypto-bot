@@ -23,6 +23,14 @@ Optional: `cp .env.example .env`, then add testnet keys and/or Telegram (see bel
 
 Which strategies may trade is set by `engine.strategies` in `config.json` (all four by default). The Hold 50/50 benchmark always runs.
 
+## Keep it running
+The bot runs **on your computer**. If the Mac is shut down, asleep, or the Terminal window is closed, nothing happens: no prices, no decisions, no trades, and no stop-losses. When you start it again, every account picks up where it left off:
+- Coins it holds are valued at the new price, so price moves while it was off do show up in P&L.
+- Signals that came and went while it was off are simply missed.
+
+- **Mac:** start it with `start.command` (or `caffeinate -is python3 -m bot.server`), keep it plugged in, and keep the lid open. The screen can turn off. `caffeinate` stops the Mac from sleeping, but closing the lid still puts it to sleep.
+- **24/7 without your Mac:** run it on an always-on machine, such as a small cloud server or an old computer. Leave it listening on 127.0.0.1 and reach the dashboard through an SSH tunnel, because the STOP button has no login.
+
 ## The strategies
 | Account | Timeframe | Rule |
 |---|---|---|
