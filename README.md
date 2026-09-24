@@ -4,6 +4,10 @@ Four spot strategies (long or cash, BTC and ETH) each run their own **$15 demo a
 
 - **DEMO (always on):** each account starts with $15 at first launch and is saved in `data/bot.db`, so it survives restarts. Every order fills against the **live order book** (the bot walks it level by level for the order size), then pays Binance's 0.1% taker fee and follows Binance's real order rules ($5 minimum order, quantity steps).
 - **TESTNET (TESTNET=1 in `.env`):** the selected strategy (`engine.testnet_strategy` in `config.json`, default TREND_D1) also sends real MARKET orders to Binance's official Spot Testnet, which uses fake funds. This shows real order placement and fills. From your location, testnet.binance.vision answers HTTP 451 ("restricted location"). The dashboard then shows **"TESTNET: blocked by exchange location"**, re-checks at most once every 15 minutes, and demo keeps running. If testnet becomes reachable, it starts working with no code change. There are no VPN or proxy workarounds, on purpose.
+- **Long/short accounts (demo only, simulated):** four $20 accounts that decide the direction themselves on every daily close. Above the 50-day average they go **long**; below it they go **short**, which profits when the price falls. When the close crosses the average, they close the trade and flip.
+  - **Why it's only simulated:** a normal spot account can't short, because shorting needs margin (borrowing) or futures. So these accounts are marked **SIMULATED SHORTS**.
+  - **The limits:** they trade at 1x with no leverage, at most 50% of the account per coin, and pay a 10%-a-year borrow cost while short (`short_borrow_rate_yearly`).
+  - **Real money stays long or cash only.**
 - **LIVE: off.** `bot/broker.py` `LiveBroker` still refuses to start. The code never reads real exchange keys and never calls api.binance.com trading endpoints.
 
 ## Quick start (Mac)
@@ -55,6 +59,13 @@ They go through the same backtest before they trade. None of them uses leverage.
 | ALTS_TREND / ALTS_HOLD | SOL, XRP | hold while the daily close is above SMA50, else cash / buy once and hold |
 | MEME_TREND / MEME_HOLD | DOGE, PEPE | same pair of rules |
 | GOLD_TREND / GOLD_HOLD | PAXG, a token backed by 1 troy ounce of gold | same pair of rules |
+
+**Long/short, simulated ($20 each):** LS_BTC_ETH, LS_ALTS (SOL, XRP), LS_MEME (DOGE, PEPE) and LS_GOLD (PAXG).
+- **The rule:** long above the daily SMA50, short below.
+- **Changing direction:** a flip sells the long (or buys back the short) first, then opens the other side.
+- **When risk is blocked** (STOP, stale prices, loss limits), no new long or short is opened, but open trades can still be closed.
+- **The backtest** simulates shorts the same way, borrow cost included.
+- **Memecoin shorts are the riskiest:** a squeeze can move a price far above its average quickly.
 
 - **Half the account per coin.** The per-coin cap in the risk rules is 50%, so the gold accounts keep the other half in cash.
 - **No volatility dial.** With $10 per coin, the dial would size memecoin orders below Binance's $5 minimum.

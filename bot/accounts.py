@@ -90,6 +90,51 @@ class Account:
             s["wins"] += 1
         return pnl
 
+    def apply_short(self, asset, sim):
+        """Simulated short sale: sell borrowed coins (demo only, 1x). The proceeds stay in
+        cash as collateral; the holding goes negative."""
+        s = self.s
+        s["cash"] += sim["proceeds_net"]
+        s["holdings"][asset] -= sim["qty"]
+        basis = s.setdefault("short_basis", {})
+        basis[asset] = basis.get(asset, 0.0) + sim["proceeds_net"]
+        s["fees"] += sim["fee_usd"]
+        s["trades"] += 1
+
+    def apply_cover(self, asset, sim):
+        """Buy back borrowed coins. Returns the realized P&L of the covered part (fees included)."""
+        s = self.s
+        short = -s["holdings"][asset]
+        part = min(1.0, sim["qty"] / short) if short > 0 else 1.0
+        basis_all = s.setdefault("short_basis", {}).get(asset, 0.0)
+        basis = basis_all * part
+        cost = sim["notional"] + sim["fee_usd"]  # the fee is paid in USDT here
+        s["cash"] -= cost
+        s["holdings"][asset] = min(0.0, s["holdings"][asset] + sim["qty"])
+        if abs(s["holdings"][asset]) < 1e-12:
+            s["holdings"][asset] = 0.0
+        s["short_basis"][asset] = basis_all - basis if s["holdings"][asset] else 0.0
+        s["fees"] += sim["fee_usd"]
+        s["trades"] += 1
+        s["sells"] += 1  # counts closed trades for the win rate
+        pnl = basis - cost
+        if pnl > 0:
+            s["wins"] += 1
+        return pnl
+
+    def accrue_borrow(self, prices, rate_yearly, now_ms):
+        """Charge interest on open shorts for the time since the last charge."""
+        s = self.s
+        last = s.get("borrow_ms") or now_ms
+        s["borrow_ms"] = now_ms
+        short_value = sum(-q * (prices.get(a) or 0.0) for a, q in s["holdings"].items() if q < 0)
+        cost = short_value * rate_yearly * max(0, now_ms - last) / (365 * 86_400_000)
+        if cost:
+            s["cash"] -= cost
+            s["fees"] += cost
+            s["borrow_fees"] = s.get("borrow_fees", 0.0) + cost
+        return cost
+
     def mark(self, equity, now_ms):
         """Once a minute: update peak, max drawdown and the UTC-day starting equity."""
         s = self.s
@@ -110,5 +155,5 @@ class Account:
             "pnl_usd": eq - s["start_cash"], "pnl_pct": eq / s["start_cash"] - 1,
             "max_dd": max(s["max_dd"], 1 - eq / peak if peak else 0.0),
             "trades": s["trades"], "win_rate": s["wins"] / s["sells"] if s["sells"] else None,
-            "fees": s["fees"], "started_ms": s["started_ms"],
+            "fees": s["fees"], "started_ms": s["started_ms"], "borrow_fees": s.get("borrow_fees", 0.0),
         }

@@ -88,6 +88,7 @@ class Strategy:
     sleeves = SLEEVES  # coin -> share of the account; the rest stays in cash
     group = "BTC & ETH"
     benchmark = False
+    allows_short = False  # True: exposure can be negative (simulated short, demo only)
 
     def decide(self, asset, candles, pos, now_ms):
         raise NotImplementedError
@@ -286,7 +287,43 @@ class Hold(Strategy):
         return f"{asset}: buys at the next daily decision (benchmark)"
 
 
-BASES = {"TREND_D1": TrendD1, "TREND_H4": TrendH4, "BREAKOUT_H1": BreakoutH1, "MEANREV_H1": MeanRevH1, "HOLD": Hold}
+class LongShortD1(Strategy):
+    """Picks the direction itself on every daily close: above SMA50 = long the sleeve,
+    below = short it. Demo only: shorting needs margin or futures, which a normal spot
+    account cannot do, so the engine simulates it at 1x (no leverage) with a borrow cost."""
+    name, timeframe, allows_short = "LS_TREND", "1d", True
+    rule = "Daily close above SMA50 = long the sleeve, below = short it (simulated short, 1x, no leverage)."
+    SMA = 50
+    needs = {"1d": 55}
+
+    def decide(self, asset, candles, pos, now_ms):
+        closes = [r[4] for r in candles["1d"]]
+        avg = sma(closes, self.SMA)
+        if avg is None:
+            return 0.0, {"reason": "not enough history", "exposure": 0.0}
+        last = closes[-1]
+        exp = 1.0 if last > avg else -1.0
+        side = "long" if exp > 0 else "short"
+        info = {"close": last, "sma": avg, "direction": side, "exposure": exp,
+                "reason": f"{'above' if exp > 0 else 'below'} SMA50: go {side}"}
+        return exp, info
+
+    def describe(self, asset, info, price, pos):
+        if "sma" not in info:
+            return f"{asset}: {info.get('reason', 'waiting for data')}"
+        d = _pct(price, info["sma"])
+        e = pos.get("exp", 0.0)
+        if e > 0:
+            return (f"{asset}: LONG, price is {d:+.1%} vs the SMA50 ({level(info['sma'])}); "
+                    f"flips to short if a daily close ends below it")
+        if e < 0:
+            return (f"{asset}: SHORT (simulated), price is {d:+.1%} vs the SMA50 ({level(info['sma'])}); "
+                    f"profits if the price falls, flips to long if a daily close ends above it")
+        return f"{asset}: flat, price is {d:+.1%} vs the SMA50 ({level(info['sma'])}); opens at the next daily close"
+
+
+BASES = {"TREND_D1": TrendD1, "TREND_H4": TrendH4, "BREAKOUT_H1": BreakoutH1, "MEANREV_H1": MeanRevH1, "HOLD": Hold,
+         "LS_TREND": LongShortD1}
 
 
 def build(cfg):

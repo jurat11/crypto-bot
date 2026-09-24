@@ -125,6 +125,27 @@ class Variants(unittest.TestCase):
             strategies.build(cfg)
 
 
+class LongShort(unittest.TestCase):
+    s = strategies.LongShortD1()
+
+    def test_decides_the_direction_itself(self):
+        up = bars([100 * 1.001 ** i for i in range(80)], step=24 * H)
+        down = bars([100 * 0.999 ** i for i in range(80)], step=24 * H)
+        self.assertEqual(self.s.decide("BTC", {"1d": up}, {}, 0)[0], 1.0)
+        exp, info = self.s.decide("BTC", {"1d": down}, {}, 0)
+        self.assertEqual(exp, -1.0)
+        self.assertEqual(info["direction"], "short")
+        self.assertIn("SHORT (simulated)", self.s.describe("BTC", info, 90.0, {"exp": -1.0}))
+        self.assertEqual(self.s.decide("BTC", {"1d": up[:10]}, {}, 0)[0], 0.0)  # not enough history: flat
+
+    def test_config_accounts(self):
+        all_ = {s.name: s for s in strategies.build(CFG)}
+        ls = [s for s in all_.values() if s.allows_short]
+        self.assertEqual({s.name for s in ls}, {"LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD"})
+        self.assertFalse(any(s.allows_short for s in all_.values() if s.group != "Long/short (simulated)"))
+        self.assertTrue(all(sum(s.sleeves.values()) <= 1.0 for s in ls))  # 1x, no leverage
+
+
 class TrendH4(unittest.TestCase):
     s = strategies.TrendH4()
 

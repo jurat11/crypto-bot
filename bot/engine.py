@@ -10,7 +10,9 @@ Always         a risk block stops buys; sells that reduce risk still go through.
 Testnet        the selected strategy's fills are also sent to Binance Spot Testnet from
                a separate thread (bot/testnet.py); demo never waits on it.
 
-No leverage, margin, futures, martingale, averaging down or grid logic, ever.
+No leverage, margin, futures, martingale, averaging down or grid logic, ever. The one
+exception is demo-only: long/short accounts SIMULATE a 1x short (no leverage) with a
+borrow cost, clearly labelled, because a normal spot account cannot short.
 """
 import json
 import math
@@ -192,8 +194,10 @@ class Engine:
             if HOLD in ready:
                 self.fund_hold(prices, now)
             points = {}
+            rate = self.ecfg.get("short_borrow_rate_yearly", 0.10)
             for name in ready:
                 a = self.accounts[name]
+                a.accrue_borrow(prices, rate, now)
                 eq = a.equity(prices)
                 a.mark(eq, now)
                 points[name] = eq
@@ -241,7 +245,9 @@ class Engine:
         except Exception as e:
             return "retry", None, f"order book unavailable ({str(e)[:80]})"
         fee = self.fee_for(acct.name)
-        if side == "BUY":
+        if side == "BUY" and usd is None and qty is not None:
+            pass  # buy back an exact quantity (closing a short)
+        elif side == "BUY":
             usd = min(usd, acct.s["cash"])
             if usd <= 0:
                 return "skipped", None, "no cash"
@@ -254,6 +260,10 @@ class Engine:
                     if alt["complete"] and alt["notional"] <= limit + 1e-9:
                         qty = near
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2 if book["bids"] and book["asks"] else None
+        if side == "SELL" and max_usd is not None and filters and mid:  # opening a short: nearest step within the cap
+            near = float(filters.round_qty(qty + float(filters.step_size) / 2))
+            if near > float(filters.round_qty(qty)) and near * mid <= max_usd + 1e-9:
+                qty = near
         if filters:
             qty, why = filters.market_qty(qty, mid or 0)
             if not qty:
@@ -276,15 +286,7 @@ class Engine:
             acct.apply_sell(asset, sim)
         if exposure is not None:
             strategies.on_fill(acct.s["pos"][asset], side, sim["avg_price"], decision_ms, exposure)
-        self.store.add_fill(account=acct.name, venue="demo", asset=asset, side=side, qty=sim["qty"],
-                            price=sim["avg_price"], notional=sim["notional"], fee=sim["fee_usd"], mid=sim["mid"],
-                            slippage_bps=sim["slippage_bps"], status="filled", reason=reason)
-        self.event(acct.name, "fill",
-                   f"{self.label(acct.name)} {side} {qty_text(sim['qty'])} {asset} at {px(sim['avg_price'])} "
-                   f"(${sim['notional']:.2f}, fee ${sim['fee_usd']:.4f}, {sim['slippage_bps']:.1f} bp vs mid, "
-                   f"{sim['levels']} book level{'s' if sim['levels'] != 1 else ''})")
-        self.alerts.trade(self.label(acct.name), "DEMO", side, asset, sim["qty"], sim["avg_price"],
-                          sim["notional"], sim["fee_usd"], reason)
+        self.log_fill(acct, asset, side, sim, reason)
         if self.testnet and acct.name == self.ecfg.get("testnet_strategy"):
             job = {"account": acct.name, "asset": asset, "side": side, "decision_ms": decision_ms, "reason": reason}
             if side == "BUY":
@@ -294,6 +296,17 @@ class Engine:
             else:
                 job["fraction"] = min(1.0, sim["qty"] / held_before)
             self.testnet.submit(**job)
+
+    def log_fill(self, acct, asset, side, sim, reason, what=""):
+        self.store.add_fill(account=acct.name, venue="demo", asset=asset, side=side, qty=sim["qty"],
+                            price=sim["avg_price"], notional=sim["notional"], fee=sim["fee_usd"], mid=sim["mid"],
+                            slippage_bps=sim["slippage_bps"], status="filled", reason=(what + ": " if what else "") + reason)
+        self.event(acct.name, "fill",
+                   f"{self.label(acct.name)} {side}{' (' + what + ')' if what else ''} {qty_text(sim['qty'])} {asset} at {px(sim['avg_price'])} "
+                   f"(${sim['notional']:.2f}, fee ${sim['fee_usd']:.4f}, {sim['slippage_bps']:.1f} bp vs mid, "
+                   f"{sim['levels']} book level{'s' if sim['levels'] != 1 else ''})")
+        self.alerts.trade(self.label(acct.name), "DEMO", side + (f" ({what})" if what else ""), asset, sim["qty"],
+                          sim["avg_price"], sim["notional"], sim["fee_usd"], reason)
 
     def fund_hold(self, prices, now):
         a = self.accounts[HOLD]
@@ -335,6 +348,8 @@ class Engine:
         for a in coins:
             pos = acct.s["pos"][a]
             exp, info = strat.decide(a, windows[a], pos, close_ms)
+            if not getattr(strat, "allows_short", False):
+                exp = max(0.0, exp)  # long-only accounts never go short
             acct.s["info"][a] = info
             decisions[a] = exp
             self.event(strat.name, "signal",
@@ -346,7 +361,8 @@ class Engine:
         pending = False
         for a in coins:
             if a in wants:
-                pending |= self.execute(strat, acct, a, decisions[a], close_ms, problems, prices, give_up) == "retry"
+                run = self.execute_ls if getattr(strat, "allows_short", False) else self.execute
+                pending |= run(strat, acct, a, decisions[a], close_ms, problems, prices, give_up) == "retry"
             else:
                 self.store.add_receipt(acct.name, a, close_ms, acct.s["info"][a],
                                        {"exposure": decisions[a], "action": "none"},
@@ -405,6 +421,76 @@ class Engine:
             self.event(acct.name, "order", f"{strat.name} {asset} {side} not sent: {why}")
         return status
 
+    def execute_ls(self, strat, acct, asset, exp, decision_ms, problems, prices, give_up):
+        """Long/short account (demo): close what is open when the direction changes, then open
+        the new side. Closing always goes through (it cuts risk); opening is blocked by risk.
+        Shorts are simulated at 1x: at most the per-asset cap of the account per coin."""
+        s = acct.s
+        pos, info = s["pos"][asset], s["info"][asset]
+        reason = info.get("reason", "")
+        risk_r = {"ok": not problems, "reasons": problems}
+        signal = {"exposure": exp, "previous": pos.get("exp", 0.0)}
+        held = s["holdings"][asset]
+        price = prices[asset]
+
+        def not_sent(status, why, order):
+            self.store.add_receipt(acct.name, asset, decision_ms, info, signal, risk_r, order, note=f"{status}: {why}")
+            verb = "not filled, will retry next minute" if status == "retry" and not give_up else "not sent"
+            self.event(acct.name, "order", f"{strat.name} {asset} {order['leg']} {verb}: {why}")
+            return status
+
+        # 1. close the open side (long -> sell it, short -> buy it back)
+        if held and (exp == 0 or (exp > 0) != (held > 0)):
+            side, leg = ("SELL", "close long") if held > 0 else ("BUY", "close short")
+            order = {"leg": leg, "side": side, "qty": abs(held)}
+            self.event(acct.name, "order", f"{strat.name} {asset} {leg}: market {side} {qty_text(abs(held))} {asset}: {reason}")
+            status, sim, why = self.market_order(acct, asset, side, qty=abs(held))
+            if status != "filled":
+                if status == "skipped" and abs(held) * price < 5.5:
+                    pos["exp"] = 0.0  # dust under the $5 minimum can never be traded; treat it as closed
+                else:
+                    return not_sent(status, why, order)
+            else:
+                pnl = acct.apply_sell(asset, sim) if side == "SELL" else acct.apply_cover(asset, sim)
+                pos["exp"] = 0.0
+                self.log_fill(acct, asset, side, sim, reason, leg)
+                self.store.add_receipt(acct.name, asset, decision_ms, info, signal, risk_r, order,
+                                       fill_price=sim["avg_price"], fee=sim["fee_usd"],
+                                       slippage_bps=sim["slippage_bps"], note=f"{leg}, realized {pnl:+.4f} USD")
+        if exp == 0:
+            pos["exp"] = 0.0
+            return "done"
+
+        # 2. open the new side
+        leg = "open long" if exp > 0 else "open short"
+        eq = acct.equity(prices)
+        cap = self.risk_cfg["risk"]["max_weight_per_asset"]
+        target = min(cap, self.sleeves[acct.name][asset] * abs(exp)) * eq
+        order = {"leg": leg, "side": "BUY" if exp > 0 else "SELL", "usd": round(target, 4)}
+        if problems:
+            note = f"{leg} blocked by risk: " + "; ".join(problems)
+            self.store.add_receipt(acct.name, asset, decision_ms, info, signal, risk_r, order, note=note)
+            self.event(acct.name, "risk", f"{strat.name} {asset} {note}")
+            return "blocked"
+        self.event(acct.name, "order", f"{strat.name} {asset} {leg}: market {order['side']} ${target:.2f}: {reason}")
+        if exp > 0:
+            status, sim, why = self.market_order(acct, asset, "BUY", usd=target, max_usd=cap * eq)
+        else:
+            status, sim, why = self.market_order(acct, asset, "SELL", qty=target / price, max_usd=cap * eq)
+        if status != "filled":
+            return not_sent(status, why, order)
+        if exp > 0:
+            acct.apply_buy(asset, sim)
+        else:
+            acct.apply_short(asset, sim)
+        pos["exp"] = exp
+        pos.update({"entry": sim["avg_price"], "entry_ms": decision_ms})
+        self.log_fill(acct, asset, order["side"], sim, reason, leg)
+        self.store.add_receipt(acct.name, asset, decision_ms, info, signal, risk_r, order,
+                               fill_price=sim["avg_price"], fee=sim["fee_usd"], slippage_bps=sim["slippage_bps"],
+                               note=f"{leg}: {qty_text(sim['qty'])} {asset} at {px(sim['avg_price'])}")
+        return "filled"
+
     # ---------- dashboard ----------
     def leaderboard(self, prices):
         rows = []
@@ -427,6 +513,7 @@ class Engine:
             r["start_cash"], r["fee_rate"] = a.s["start_cash"], self.fee_for(name)
             r["note"] = getattr(self.strategies.get(name), "note", "") if name != HOLD else ""
             r["group"] = getattr(self.strategies.get(name), "group", "BTC & ETH")
+            r["allows_short"] = getattr(self.strategies.get(name), "allows_short", False)
             r["coins"] = list(self.sleeves[name])
             rows.append(r)
         rows.sort(key=lambda r: -r["pnl_pct"])  # accounts start with $15 or $20, so compare in %

@@ -263,6 +263,73 @@ class OtherCoins(EngineCase):
         self.assertEqual(self.feed.age_s(["BTCUSDT"]), 0)
 
 
+class LongShortAccounts(EngineCase):
+    def ls(self, want):
+        st = CoinStub("LS", {"BTC": 0.5, "ETH": 0.5}, want)
+        st.allows_short = True
+        return st
+
+    def test_opens_a_short_and_profits_when_price_falls(self):
+        st = self.ls({"BTC": -1.0, "ETH": 0.0})
+        eng = self.engine([st])
+        eng.tick()
+        acct = eng.accounts["LS"]
+        self.assertLess(acct.s["holdings"]["BTC"], 0)  # short
+        # $20 + the sale proceeds. The $10 target is 0.000119 BTC; the step is 0.00001 BTC and
+        # 0.00012 ($10.08) would break the 50% cap, so it sells 0.00011 BTC ($9.24)
+        self.assertAlmostEqual(-acct.s["holdings"]["BTC"], 0.00011)
+        self.assertAlmostEqual(acct.s["cash"], 20 + 0.00011 * 84_000 * 0.999, delta=0.01)
+        start_eq = acct.equity(eng.prices())
+        self.assertAlmostEqual(start_eq, 20.0, delta=0.05)  # only the fee (and spread) is lost
+        self.public.prices["BTCUSDT"] = 84_000.0 * 0.9
+        self.feed.poll_once()
+        self.assertAlmostEqual(acct.equity(eng.prices()) - start_eq, 0.00011 * 8_400, delta=0.01)  # 10% fall
+        fill = [f for f in self.store.recent_fills() if f["account"] == "LS"][0]
+        self.assertEqual((fill["side"], fill["reason"].split(":")[0]), ("SELL", "open short"))
+
+    def test_flip_from_short_to_long(self):
+        st = self.ls({"BTC": -1.0, "ETH": 0.0})
+        eng = self.engine([st])
+        eng.tick()
+        self.public.prices["BTCUSDT"] = 80_000.0
+        st.want["BTC"] = 1.0
+        self.minute(eng, 60)
+        acct = eng.accounts["LS"]
+        self.assertGreater(acct.s["holdings"]["BTC"], 0)  # now long
+        self.assertEqual((acct.s["sells"], acct.s["wins"]), (1, 1))  # the short was closed at a profit
+        legs = [f["reason"].split(":")[0] for f in self.store.recent_fills() if f["account"] == "LS"]
+        self.assertEqual(legs[:3], ["open long", "close short", "open short"])  # newest first
+
+    def test_stop_blocks_opening_but_not_closing(self):
+        st = self.ls({"BTC": -1.0, "ETH": 0.0})
+        eng = self.engine([st])
+        eng.tick()
+        eng.press_stop()
+        st.want["BTC"] = 1.0
+        self.minute(eng, 60)
+        acct = eng.accounts["LS"]
+        self.assertEqual(acct.s["holdings"]["BTC"], 0.0)  # the short was closed, the long not opened
+        self.assertEqual(acct.s["pos"]["BTC"]["exp"], 0.0)
+        self.assertTrue(any("open long blocked by risk" in e["text"] for e in self.store.recent_events()))
+
+    def test_borrow_cost_while_short(self):
+        st = self.ls({"BTC": -1.0, "ETH": 0.0})
+        eng = self.engine([st])
+        eng.tick()
+        acct = eng.accounts["LS"]
+        short_value = -acct.s["holdings"]["BTC"] * eng.prices()["BTC"]
+        self.minute(eng, 60)
+        self.assertAlmostEqual(acct.s["borrow_fees"], short_value * 0.10 / (365 * 24), places=7)
+        self.assertEqual(eng.accounts[HOLD].s.get("borrow_fees", 0.0), 0.0)  # long-only pays nothing
+
+    def test_long_only_accounts_never_go_short(self):
+        self.stub.want["BTC"] = -1.0  # a long-only strategy asking for a short is treated as cash
+        eng = self.engine()
+        eng.tick()
+        self.assertGreaterEqual(eng.accounts["STUB_H1"].s["holdings"]["BTC"], 0.0)
+        self.assertEqual(eng.accounts["STUB_H1"].s["pos"]["BTC"].get("exp", 0.0), 0.0)
+
+
 class Decisions(EngineCase):
     def test_buys_on_closed_candle_and_writes_receipt(self):
         eng = self.engine()
@@ -493,7 +560,9 @@ class SSEPayload(EngineCase):
         self.stub.want["BTC"] = 0.0
         self.minute(eng, 60)
         self.assertIn("fills", stream_delta(eng.snapshot(), seen))  # a new fill arrived
-        self.assertGreater(len(sse(first)), 2 * len(sse(second)))
+        # the saving is the whole activity feed (and fills table), which is not sent again
+        saved = len(sse(first)) - len(sse(second))
+        self.assertGreater(saved, len(json.dumps(first["feed"])))
 
     def test_no_nan_or_infinity_in_json(self):
         payload = clean({"a": float("nan"), "b": [float("inf"), 1.5], "c": {"d": float("-inf")}})

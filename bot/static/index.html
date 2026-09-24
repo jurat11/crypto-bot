@@ -152,6 +152,8 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
         <div class="chart-box"><canvas id="chart-0" role="img" aria-label="Profit or loss of the BTC and ETH accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
       <div class="chart-grp"><h3>More coins: altcoins, memecoins, gold</h3><div class="legend" id="legend-1"></div>
         <div class="chart-box"><canvas id="chart-1" role="img" aria-label="Profit or loss of the altcoin, memecoin and gold accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
+      <div class="chart-grp"><h3>Long/short (simulated)</h3><div class="legend" id="legend-2"></div>
+        <div class="chart-box"><canvas id="chart-2" role="img" aria-label="Profit or loss of the simulated long/short accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
       <div class="sub" id="chart-note">One point per minute; the last point moves every second. Colours are per chart.</div>
     </section>
     <section class="card">
@@ -223,7 +225,9 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
 const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
                D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const GROUPS = ["BTC & ETH", "More coins"];
+const GROUPS = ["BTC & ETH", "More coins", "Long/short (simulated)"];
+const GROUP_TITLE = { "BTC & ETH": "BTC & ETH", "More coins": "More coins: altcoins, memecoins, gold",
+  "Long/short (simulated)": "Long/short (simulated): the bot picks long or short itself; shorts are simulated at 1x with a 10%/yr borrow cost, not possible on a normal spot account" };
 const groupOf = {};  // account -> group, filled from the stream and the history
 function noteGroups(pairs) {
   for (const [acct, grp] of pairs) {
@@ -247,8 +251,9 @@ function el(tag, attrs, ...kids) {
   return e;
 }
 const fmtUsd = (x, d = 2) => x == null ? "–" : (x < 0 ? "-$" : "$") + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtSigned = (x, d = 4) => x == null ? "–" : (x >= 0 ? "+" : "-") + "$" + Math.abs(x).toFixed(d);
-const fmtPct = (x, d = 2, sign = false) => x == null ? "–" : (sign && x >= 0 ? "+" : "") + (x * 100).toFixed(d) + "%";
+const noNegZero = (x, d) => Math.abs(x) < 0.5 * 10 ** -d ? 0 : x;  // never show "-0.00"
+const fmtSigned = (x, d = 4) => { if (x == null) return "–"; x = noNegZero(x, d); return (x >= 0 ? "+" : "-") + "$" + Math.abs(x).toFixed(d); };
+const fmtPct = (x, d = 2, sign = false) => { if (x == null) return "–"; x = noNegZero(x * 100, d); return (sign && x >= 0 ? "+" : "") + x.toFixed(d) + "%"; };
 const fmtPx = (x) => {
   if (x == null) return "–";
   if (x >= 100) return x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -271,7 +276,7 @@ function renderBoard(allRows) {
   for (const grp of GROUPS.concat([...new Set(allRows.map((r) => r.group))].filter((g) => !GROUPS.includes(g)))) {
     const rows = allRows.filter((r) => (r.group || "BTC & ETH") === grp);
     if (!rows.length) continue;
-    out.push(el("tr", { class: "grp" }, el("td", { colspan: 9 }, grp === "BTC & ETH" ? "BTC & ETH" : grp + ": altcoins, memecoins, gold")));
+    out.push(el("tr", { class: "grp" }, el("td", { colspan: 9 }, GROUP_TITLE[grp] || grp)));
     out.push(...rows.map((r, i) => boardRow(r, i)));
   }
   tb.replaceChildren(...out);
@@ -290,9 +295,11 @@ function boardRow(r, i) {
   else if (r.backtest === "NOT BACKTESTED") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not backtested"));
   else if (r.backtest === "BENCHMARK") badges.push(el("span", { class: "badge", title: r.backtest_why }, "benchmark"));
   else if (r.backtest === "NOT ENOUGH DATA") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not enough data"));
+  if (r.allows_short) badges.push(el("span", { class: "badge tn", title: "shorts are simulated at 1x; a normal spot account cannot short" }, "SIMULATED SHORTS"));
   if (r.testnet) badges.push(el("span", { class: "badge tn", title: "this strategy's orders are also sent to Binance Spot Testnet" }, "TESTNET"));
   const hold = r.holdings_usd || {};
-  const coins = (r.coins || Object.keys(hold)).map((c) => `${c} ${fmtUsd(hold[c])}`).join(" · ");
+  const coins = (r.coins || Object.keys(hold)).map((c) => hold[c] < -0.005 ? `${c} SHORT ${fmtUsd(-hold[c])}`
+    : `${c} ${fmtUsd(hold[c])}`).join(" · ");
   const acct = el("td", {},
     el("span", { class: "key", style: `background:${colorOf(r.account)}` }),
     el("span", { class: "acct" }, r.label), ...badges,
@@ -409,7 +416,7 @@ function renderFills(fills) {
 }
 
 // ---------- P&L charts (one per group, at most 8 colours each) ----------
-let charts = [null, null], history = null, labels = {}, starts = {};
+let charts = [null, null, null], history = null, labels = {}, starts = {};
 const toPoint = (acct, x, bal) => ({ x, y: (bal / (starts[acct] || 15) - 1) * 100, bal });
 function datasetFor(acct, pts) {
   const c = colorOf(acct);
@@ -463,10 +470,10 @@ function buildChart() {
   if (!window.Chart) { $("chart-note").textContent = "Chart.js could not load from the CDN. Every number above is still live."; return; }
   Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
   Chart.defaults.color = css("--muted");
-  charts = [makeChart($("chart-0")), makeChart($("chart-1"))];
+  charts = [0, 1, 2].map((i) => makeChart($("chart-" + i)));
 }
 function renderLegend() {
-  [0, 1].forEach((i) => {
+  [0, 1, 2].forEach((i) => {
     const accts = Object.keys(labels).filter((a) => chartIndex(a) === i);
     $("legend-" + i).replaceChildren(...accts.map((a) => el("span", {},
       el("span", { class: "key", style: `background:${colorOf(a)}` }), labels[a])));
@@ -521,7 +528,8 @@ async function loadBacktest() {
     Object.entries(st.results).forEach(([fee, r], i) => {
       const cls = st.verdict === "PASSED" ? "pass" : st.verdict === "FAILED BACKTEST" ? "fail" : "";
       const verdict = i === 0 ? el("span", { class: "badge " + cls, style: "margin-left:0", title: st.why }, st.verdict.toLowerCase() === "benchmark" ? "benchmark" : st.verdict) : "";
-      const coins = st.coins && st.coins.join(",") !== "BTC,ETH" ? ` (${st.coins.join(", ")})` : "";
+      const coins = (st.coins && st.coins.join(",") !== "BTC,ETH" ? ` (${st.coins.join(", ")})` : "")
+        + (st.allows_short ? " · long/short, simulated" : "");
       rows.push(el("tr", {},
         el("td", {}, i === 0 ? el("span", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, name), coins) : ""),
         cell(fmtPct(+fee, 1)), cell(fmtPct(r.is.cagr, 1)), cell(fmtPct(r.is.max_dd, 0)),
@@ -609,7 +617,7 @@ $("stop-yes").onclick = async () => {
 };
 
 // Re-read theme colors when the OS theme flips.
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { charts.forEach((c) => c && c.destroy()); charts = [null, null]; buildChart(); loadHistory(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { charts.forEach((c) => c && c.destroy()); charts = [null, null, null]; buildChart(); loadHistory(); });
 
 initChips(); buildChart(); loadHistory(); loadBacktest(); connect();
 setInterval(() => { charts.forEach((c) => c && c.data.datasets.forEach((d) => { d.data = d.data.filter((p) => !p.live); })); loadHistory(); }, 60000);

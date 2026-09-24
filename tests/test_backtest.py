@@ -42,6 +42,28 @@ class Sleeve(unittest.TestCase):
         self.assertAlmostEqual(curve[2], 1 - 0.004 * 1.0)
         self.assertEqual(len(trades), 2)
 
+    def test_short_profits_when_price_falls(self):
+        curve, trades, trips = bt.sleeve([(1, 100.0, -1.0), (2, 90.0, -1.0), (3, 90.0, 0.0)], 0.0)
+        self.assertAlmostEqual(curve[2], 1.1)  # sold at 100, worth 90 to buy back
+        self.assertAlmostEqual(curve[3], 1.1)
+        self.assertEqual(trips, [(1, 3, True)])
+
+    def test_short_loses_when_price_rises_and_pays_fees_both_ways(self):
+        curve, _, trips = bt.sleeve([(1, 100.0, -1.0), (2, 120.0, 0.0)], 0.001)
+        self.assertAlmostEqual(curve[2], 1 + 0.999 - 0.01 * 120 * 1.001)
+        self.assertFalse(trips[0][2])
+
+    def test_flip_closes_then_opens(self):
+        curve, trades, trips = bt.sleeve([(1, 100.0, 1.0), (2, 110.0, -1.0), (3, 100.0, -1.0)], 0.0)
+        self.assertEqual(trades, [1, 2, 2])  # buy, then at t=2 sell the long and open the short
+        self.assertAlmostEqual(curve[2], 1.1)
+        self.assertAlmostEqual(curve[3], 1.1 * (1 + (110 - 100) / 110))  # the short gained on the fall
+
+    def test_borrow_cost_on_shorts(self):
+        path = [(k, 100.0, -1.0) for k in range(24 * 365 + 1)]
+        curve, _, _ = bt.sleeve(path, 0.0, borrow=0.10)
+        self.assertAlmostEqual(curve[24 * 365], 1 - 0.10, places=3)  # a year of 10% interest on the short
+
     def test_quantity_is_held_between_trades(self):
         # 50% in the coin, price doubles: equity is 0.5 cash + 0.5 * 2, no hidden rebalancing
         curve, _, _ = bt.sleeve([(1, 100.0, 0.5), (2, 150.0, 0.5), (3, 200.0, 0.5)], 0.0)
@@ -69,8 +91,9 @@ class Backtest(unittest.TestCase):
 
     def test_report_rising_market(self):
         rep = bt.run(self.up, CFG, self.periods)
-        self.assertEqual(set(rep["strategies"]), {"TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1",
-                                                  "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE"})
+        on_btc_eth = {s.name for s in strategies.build(CFG) if set(s.sleeves) <= {"BTC", "ETH"}}
+        self.assertEqual(set(rep["strategies"]), on_btc_eth)  # the others have no price data in this test
+        self.assertIn("LS_BTC_ETH", on_btc_eth)
         self.assertGreater(rep["hold"]["oos"]["return"], 0)
         d1 = rep["strategies"]["TREND_D1"]
         self.assertGreater(d1["results"]["0.001"]["oos"]["return"], 0)

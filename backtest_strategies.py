@@ -117,17 +117,42 @@ def exposure_path(strategy, asset, h1):
     return path
 
 
-def sleeve(path, fee):
+def sleeve(path, fee, borrow=0.0):
     """Hourly equity curve plus trades and round trips (entry time, exit time, won?).
 
     Holds a fixed coin quantity between trades, like the demo account: when the exposure
     changes it trades the difference to exposure x sleeve equity and pays `fee` on the traded
-    notional (buyer pays in coins, seller in USDT)."""
+    notional (buyer pays in coins, seller in USDT).
+
+    Negative exposure is a simulated 1x short (long/short accounts): selling borrowed coins,
+    paying `borrow` a year on the short's value, and buying them back to close. A change of
+    direction closes the old side before opening the new one."""
     cash, qty, prev_e = 1.0, 0.0, 0.0
     curve, trades, trips = {}, [], []
     entry = None
+    per_hour = borrow / (365 * 24)
     for t, c, e in path:
-        if e != prev_e:
+        if qty < 0:
+            cash -= -qty * c * per_hour
+        if e != prev_e and (prev_e < 0 or e < 0):
+            if qty:  # close the open side
+                cash += qty * c * (1 - fee) if qty > 0 else qty * c * (1 + fee)
+                qty = 0.0
+                trades.append(t)
+                if entry:
+                    trips.append((entry[0], t, cash > entry[1]))
+                    entry = None
+            if e:  # open the new side with |e| x equity
+                entry = (t, cash)
+                notional = abs(e) * cash
+                if e > 0:
+                    cash -= notional
+                    qty = notional * (1 - fee) / c
+                else:
+                    cash += notional * (1 - fee)
+                    qty = -notional / c
+                trades.append(t)
+        elif e != prev_e:
             eq = cash + qty * c
             if prev_e == 0:
                 entry = (t, eq)
@@ -168,7 +193,8 @@ def stats(series):
         mdd = max(mdd, 1 - e / peak)
     years = (series[-1][0] - series[0][0]) / (365 * D)
     tot = series[-1][1] / series[0][1]
-    return {"return": tot - 1, "cagr": tot ** (1 / years) - 1 if years > 0 else 0.0, "max_dd": mdd,
+    cagr = (tot ** (1 / years) - 1 if tot > 0 else -1.0) if years > 0 else 0.0  # a short can lose everything
+    return {"return": tot - 1, "cagr": cagr, "max_dd": mdd,
             "start": day(series[0][0]), "end": day(series[-1][0])}
 
 
@@ -190,9 +216,9 @@ def horizons(series):
     return out
 
 
-def evaluate(paths, weights, fee, periods):
+def evaluate(paths, weights, fee, periods, borrow=0.0):
     """paths: {asset: exposure path}. Returns {period_name: stats + trades + win rate}."""
-    sl = {a: sleeve(p, fee) for a, p in paths.items()}
+    sl = {a: sleeve(p, fee, borrow) for a, p in paths.items()}
     curves = {a: s[0] for a, s in sl.items()}
     out = {}
     for name, (t0, t1) in periods.items():
@@ -202,7 +228,7 @@ def evaluate(paths, weights, fee, periods):
         st["trades"] = sum(1 for a in sl for t in sl[a][1] if t0 <= t < t1)
         st["round_trips"] = len(trips)
         st["win_rate"] = sum(trips) / len(trips) if trips else None
-        exp_sum = sum(e for a, p in paths.items() for (t, _, e) in p if t0 <= t < t1)
+        exp_sum = sum(abs(e) for a, p in paths.items() for (t, _, e) in p if t0 <= t < t1)
         n = sum(1 for a, p in paths.items() for (t, _, _) in p if t0 <= t < t1)
         st["time_invested"] = exp_sum / n if n else 0.0
         if name == "oos" and series:
@@ -230,11 +256,13 @@ def run(hist, cfg, periods=None):
         if not all(hist.get(a) for a in weights):
             continue  # no price history for a coin (run_and_save loads every coin the config uses)
         paths = {a: exposure_path(s, a, hist[a]) for a in weights}
-        res = {str(fee): evaluate(paths, weights, fee, periods) for fee in FEES}
+        borrow = cfg["engine"].get("short_borrow_rate_yearly", 0.10) if getattr(s, "allows_short", False) else 0.0
+        res = {str(fee): evaluate(paths, weights, fee, periods, borrow) for fee in FEES}
         v, why = verdict(res, getattr(s, "benchmark", False))
         report["strategies"][s.name] = {"verdict": v, "why": why, "rule": s.rule, "results": res,
                                         "demo_fee": str(getattr(s, "fee_rate", FEES[0])),
-                                        "coins": list(weights), "group": getattr(s, "group", "BTC & ETH")}
+                                        "coins": list(weights), "group": getattr(s, "group", "BTC & ETH"),
+                                        "allows_short": getattr(s, "allows_short", False)}
     weights = strategies.SLEEVES
     hold = {a: [(r[0] + H, r[4], 1.0) for r in hist[a]] for a in weights}
     report["hold"] = evaluate(hold, weights, 0.0, periods)
