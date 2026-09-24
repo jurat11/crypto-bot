@@ -1,6 +1,12 @@
 # Build spec: multi-strategy engine + live dashboard
 
-Status: approved to build everything except real-money trading. The user has no real Binance keys; LIVE stays disabled. Testnet keys (free, fake funds) will be added later as TESTNET_API_KEY / TESTNET_API_SECRET; until then build and unit-test the testnet code offline.
+Status: approved to build everything except real-money trading. LIVE stays disabled.
+
+Location constraint (checked 2026-09-24 from the user's machine): data-api.binance.vision (public prices, depth) works; testnet.binance.vision and api.binance.com return HTTP 451 "restricted location". Do NOT use VPNs, proxies or other workarounds.
+- Build DEMO fully; it only needs public market data.
+- Build TESTNET mode completely behind a generic exchange-adapter interface, unit-tested offline (signing, filters, idempotent client order ids), default TESTNET=0. On a 451 it must log a clear "blocked by exchange location" status on the dashboard and keep running demo.
+- "Done" item 2 is marked BLOCKED BY LOCATION, not failed.
+- The user has testnet keys in their local .env (gitignored). Never read, print or log them.
 
 ## Goal
 A trading engine with a live web dashboard. Several strategies run side by side, each with its own $15 demo account on REAL live Binance prices, and I can watch the balance and every decision update every second. It also has a testnet mode that sends real orders to Binance's official Spot Testnet, so I can see real order placement and fills.
