@@ -29,7 +29,7 @@ The bot runs **on your computer**. If the Mac is shut down, asleep, or the Termi
 - Signals that came and went while it was off are simply missed.
 
 - **Mac:** start it with `start.command` (or `caffeinate -is python3 -m bot.server`), keep it plugged in, and keep the lid open. The screen can turn off. `caffeinate` stops the Mac from sleeping, but closing the lid still puts it to sleep.
-- **24/7 without your Mac:** run it on an always-on machine, such as a small cloud server or an old computer. Leave it listening on 127.0.0.1 and reach the dashboard through an SSH tunnel, because the STOP button has no login.
+- **24/7 without your Mac:** follow [deploy/DEPLOY.md](deploy/DEPLOY.md). It covers a free Google Cloud server, a one-paste install (`deploy/install.sh`) that runs the bot as a service and restarts it by itself, and opening the dashboard privately from your phone with Tailscale. Set `DASHBOARD_PASSWORD` in `.env` whenever the dashboard can be reached from another device.
 
 ## The strategies
 | Account | Timeframe | Rule |
@@ -106,6 +106,7 @@ How testnet orders stay safe:
 | `bot/alerts.py` | optional Telegram: every trade, every risk block, daily 00:15 UTC leaderboard |
 | `backtest_strategies.py` | the in-sample/out-of-sample table for all four strategies |
 | `start.command` | double-click launcher for the Mac |
+| `deploy/install.sh`, `deploy/DEPLOY.md` | run it 24/7 on a free cloud server |
 | `bot/net.py` | TLS certificates (falls back to certifi on python.org Python for Mac); verification is never turned off |
 | `bot/devmarket.py` | `--fake-market` for working on the page offline (made-up prices, `data/dev.db`, labelled FAKE) |
 

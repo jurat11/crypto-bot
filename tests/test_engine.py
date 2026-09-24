@@ -9,7 +9,7 @@ import unittest
 from bot import candles, exchange, strategies, testnet
 from bot.alerts import Alerts
 from bot.db import Store
-from bot.engine import HOLD, Engine, clean, sse
+from bot.engine import HOLD, Engine, clean, sse, stream_delta
 from bot.market import CandlesNotReady, CandleStore, MarketFeed
 
 CFG = json.load(open(os.path.join(os.path.dirname(__file__), "..", "config.json")))
@@ -396,6 +396,27 @@ class SSEPayload(EngineCase):
         self.assertEqual(msg.count("\n"), 2)
         body = json.loads(msg[len("data: "):])
         self.assertEqual(body["banner"]["demo"], "DEMO: no real money")
+
+    def test_stream_sends_only_new_events_and_changed_fills(self):
+        eng = self.engine()
+        eng.tick()
+        seen = {}
+        first = stream_delta(eng.snapshot(), seen)
+        self.assertEqual(len(first["feed"]), len(eng.snapshot()["feed"]))  # full history once
+        self.assertIn("fills", first)
+        self.clock.t += 1
+        second = stream_delta(eng.snapshot(), seen)
+        self.assertEqual(second["feed"], [])
+        self.assertNotIn("fills", second)
+        self.assertIn("leaderboard", second)  # balances still come every second
+        eng.event("engine", "check", "something new")
+        self.clock.t += 1
+        third = stream_delta(eng.snapshot(), seen)
+        self.assertEqual([e["text"] for e in third["feed"]], ["something new"])
+        self.stub.want["BTC"] = 0.0
+        self.minute(eng, 60)
+        self.assertIn("fills", stream_delta(eng.snapshot(), seen))  # a new fill arrived
+        self.assertGreater(len(sse(first)), 2 * len(sse(second)))
 
     def test_no_nan_or_infinity_in_json(self):
         payload = clean({"a": float("nan"), "b": [float("inf"), 1.5], "c": {"d": float("-inf")}})

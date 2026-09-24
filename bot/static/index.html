@@ -521,7 +521,7 @@ function onSnapshot(s) {
   if (s.leaderboard.length && Object.keys(lastBoard).length !== s.leaderboard.length) {
     lastBoard = Object.fromEntries(s.leaderboard.map((r) => [r.account, r])); renderExpect();
   }
-  renderStates(s.states); renderRisk(s.risk); renderFeed(s.feed); renderFills(s.fills);
+  renderStates(s.states); renderRisk(s.risk); renderFeed(s.feed); if (s.fills) renderFills(s.fills);
   liveChartPoint(s);
 }
 function connect() {

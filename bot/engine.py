@@ -58,6 +58,26 @@ def sse(payload):
     return "data: " + json.dumps(clean(payload), separators=(",", ":")) + "\n\n"
 
 
+def stream_delta(snap, seen):
+    """What one open dashboard still needs from this snapshot: only activity-feed events
+    newer than it has, and the fills table only when a fill was added. `seen` is that
+    connection's memory. Cuts the stream from ~22 KB to ~8 KB a second (matters on a
+    cloud server with a small monthly data allowance)."""
+    msg = dict(snap)
+    feed = snap.get("feed") or []
+    newest = feed[0]["id"] if feed else None
+    last = seen.get("feed")
+    msg["feed"] = feed if last is None else [e for e in feed if e["id"] > last]
+    if newest is not None:
+        seen["feed"] = max(newest, last or newest)
+    fills = snap.get("fills") or []
+    top = fills[0]["id"] if fills else None
+    if "fills_top" in seen and seen["fills_top"] == top:
+        msg.pop("fills", None)
+    seen["fills_top"] = top
+    return msg
+
+
 def _hhmm(ms):
     return time.strftime("%H:%M UTC", time.gmtime(ms / 1000))
 

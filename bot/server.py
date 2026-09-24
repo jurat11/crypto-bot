@@ -26,18 +26,38 @@ import webbrowser
 from . import env, strategies
 from .alerts import Alerts
 from .db import Store
-from .engine import BACKTEST_FILE, Engine, load_backtest, sse
+from .engine import BACKTEST_FILE, Engine, load_backtest, sse, stream_delta
 from .exchange import BinanceSpot
 from .market import CandleStore, MarketFeed
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
-def create_app(engine):
-    from fastapi import FastAPI, Request
+def create_app(engine, password=None):
+    """password: when set (DASHBOARD_PASSWORD in .env), every page and API call needs it
+    (HTTP Basic auth, any user name). Use it whenever the dashboard is reachable from
+    another computer, because the STOP button has no other protection."""
+    import base64
+    import secrets
+
+    from fastapi import Depends, FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-    app = FastAPI(title="crypto-bot dashboard", docs_url=None, redoc_url=None)
+    def check_password(request: Request):
+        if not password:
+            return
+        header = request.headers.get("authorization", "")
+        given = ""
+        if header.startswith("Basic "):
+            try:
+                given = base64.b64decode(header[6:]).decode().partition(":")[2]
+            except (ValueError, UnicodeDecodeError):
+                given = ""
+        if not secrets.compare_digest(given.encode(), password.encode()):
+            raise HTTPException(401, "password required", {"WWW-Authenticate": 'Basic realm="crypto-bot"'})
+
+    app = FastAPI(title="crypto-bot dashboard", docs_url=None, redoc_url=None, openapi_url=None,
+                  dependencies=[Depends(check_password)])
 
     @app.get("/", response_class=HTMLResponse)
     def index():
@@ -64,9 +84,10 @@ def create_app(engine):
     @app.get("/api/stream")
     async def stream(request: Request):
         async def gen():
+            seen = {}
             while not await request.is_disconnected():
                 snap = await asyncio.to_thread(engine.snapshot)
-                yield sse(snap)
+                yield sse(stream_delta(snap, seen))
                 await asyncio.sleep(1)
 
         return StreamingResponse(gen(), media_type="text/event-stream",
@@ -183,7 +204,8 @@ def main(argv=None):
     if not args.no_browser:
         threading.Thread(target=lambda: (time.sleep(1.5), webbrowser.open(url)), daemon=True).start()
     try:
-        uvicorn.run(create_app(engine), host=args.host, port=args.port, log_level="warning")
+        uvicorn.run(create_app(engine, os.getenv("DASHBOARD_PASSWORD") or None),
+                    host=args.host, port=args.port, log_level="warning")
     finally:
         stop.set()
         feed.stop()

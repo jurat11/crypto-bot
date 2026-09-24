@@ -75,6 +75,20 @@ class Endpoints(unittest.TestCase):
         self.assertTrue(self.client.get("/api/snapshot").json()["stopped"])
 
 
+    def test_password_protects_every_endpoint(self):
+        import base64
+        client = TestClient(create_app(self.engine, password="s3cret"))
+        for path in ("/", "/api/snapshot", "/api/history", "/api/backtest"):
+            self.assertEqual(client.get(path).status_code, 401, path)
+        self.assertEqual(client.post("/api/stop", json={"confirm": True}).status_code, 401)
+        self.assertFalse(os.path.exists("STOP"))
+        wrong = {"Authorization": "Basic " + base64.b64encode(b"me:nope").decode()}
+        right = {"Authorization": "Basic " + base64.b64encode(b"me:s3cret").decode()}
+        self.assertEqual(client.get("/", headers=wrong).status_code, 401)
+        self.assertEqual(client.get("/", headers=right).status_code, 200)
+        self.assertEqual(client.get("/api/snapshot", headers=right).status_code, 200)
+
+
 @unittest.skipIf(TestClient is None, "fastapi not installed (pip install -r requirements.txt)")
 class BacktestGate(unittest.TestCase):
     def setUp(self):
