@@ -4,7 +4,7 @@ Status: approved to build everything except real-money trading. LIVE stays disab
 
 Location constraint (checked 2026-09-24 from the user's machine): data-api.binance.vision (public prices, depth) works; testnet.binance.vision and api.binance.com return HTTP 451 "restricted location". Do NOT use VPNs, proxies or other workarounds.
 - Build DEMO fully; it only needs public market data.
-- Build TESTNET mode completely behind a generic exchange-adapter interface, unit-tested offline (signing, filters, idempotent client order ids), default TESTNET=0. On a 451 it must log a clear "blocked by exchange location" status on the dashboard and keep running demo.
+- Build TESTNET mode completely behind a generic exchange-adapter interface, unit-tested offline (signing, filters, idempotent client order ids). The user wants TESTNET=1 ON: the engine must try testnet orders for the selected strategy alongside demo. On HTTP 451 it shows "TESTNET: blocked by exchange location" on the dashboard, sends no retries in a loop (re-check at most every 15 min), and demo keeps running unaffected. If testnet becomes reachable it starts working with no code change.
 - "Done" item 2 is marked BLOCKED BY LOCATION, not failed.
 - The user has testnet keys in their local .env (gitignored). Never read, print or log them.
 
