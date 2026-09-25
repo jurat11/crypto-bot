@@ -91,8 +91,8 @@ class Backtest(unittest.TestCase):
 
     def test_report_rising_market(self):
         rep = bt.run(self.up, CFG, self.periods)
-        on_btc_eth = {s.name for s in strategies.build(CFG) if set(s.sleeves) <= {"BTC", "ETH"}}
-        self.assertEqual(set(rep["strategies"]), on_btc_eth)  # the others have no price data in this test
+        on_btc_eth = {s.name for s in strategies.build(CFG) if set(s.sleeves) <= {"BTC", "ETH"} and s.timeframe != "1m"}
+        self.assertEqual(set(rep["strategies"]), on_btc_eth)  # the others have no (1-minute) price data in this test
         self.assertIn("LS_BTC_ETH", on_btc_eth)
         self.assertGreater(rep["hold"]["oos"]["return"], 0)
         d1 = rep["strategies"]["TREND_D1"]
@@ -194,6 +194,51 @@ class Cache(unittest.TestCase):
         finally:
             os.chdir(cwd)
             shutil.rmtree(tmp)
+
+
+def minute_walk(days, drift_per_min, vol_per_min, seed, start=T0):
+    rnd = random.Random(seed)
+    rows, p = [], 100.0
+    for i in range(days * 1440):
+        o = p
+        p *= math.exp(drift_per_min + vol_per_min * rnd.gauss(0, 1))
+        rows.append((start + i * 60_000, o, max(o, p), min(o, p), p, 1.0))
+    return rows
+
+
+class Minute(unittest.TestCase):
+    def test_scalper_takes_small_profits_over_and_over(self):
+        rise = [(T0 + i * 60_000, 0, 0, 0, 100 * 1.0002 ** i, 1.0) for i in range(600)]  # +0.02% a minute
+        path = bt.minute_path(strategies.Scalp(), "BTC", rise)
+        curve, trades, trips = bt.sleeve(path, 0.0, steps_per_year=365 * 24 * 60)
+        self.assertGreater(len(trips), 10)
+        self.assertTrue(all(won for _, _, won in trips))  # every trade hit +0.3% before -0.3%
+        self.assertGreater(curve[path[-1][0]], 1.0)
+        fee_curve, _, _ = bt.sleeve(path, 0.004, steps_per_year=365 * 24 * 60)
+        self.assertLess(fee_curve[path[-1][0]], 1.0)  # at 0.4% a side, each +0.3% win still loses money
+
+    def test_minute_borrow_and_hourly_marks(self):
+        path = [(T0 + k * 60_000, 100.0, -1.0) for k in range(1441)]  # short for one day
+        curve, _, _ = bt.sleeve(path, 0.0, borrow=0.10, steps_per_year=365 * 24 * 60, mark_ms=H)
+        self.assertEqual(len(curve), 25)  # one mark an hour
+        self.assertAlmostEqual(curve[T0 + D], 1 - 0.10 / 365, places=6)  # a day of 10%/yr interest
+
+    def test_run_reports_scalpers_with_the_fee_drag(self):
+        hourly = {"BTC": synthetic(420, 0.9, 0.35, 1), "ETH": synthetic(420, 0.9, 0.45, 2)}
+        periods = {"is": (T0 + 100 * D, T0 + 260 * D), "oos": (T0 + 260 * D, T0 + 420 * D)}
+        m1 = {"BTC": minute_walk(5, 0, 0.0008, 7), "ETH": minute_walk(5, 0, 0.0009, 8)}
+        rep = bt.run(hourly, CFG, periods, minute_hist=m1, minute_days=4)
+        sc = rep["strategies"]["SCALP_BTC_ETH"]
+        self.assertIn(sc["verdict"], ("PASSED", "FAILED BACKTEST"))
+        self.assertEqual(sc["timeframe"], "1m")
+        o1, o4 = sc["results"]["0.001"]["oos"], sc["results"]["0.004"]["oos"]
+        self.assertGreater(o1["trades"], 20)
+        self.assertGreaterEqual(sc["no_fee"]["oos"]["return"], o1["return"])  # fees only ever take
+        self.assertGreaterEqual(o1["return"], o4["return"])
+        self.assertIn("1-minute candles", sc["test"])
+        self.assertNotIn("SCALP_MEME", rep["strategies"])  # no DOGE/PEPE minute data here
+        self.assertIn("before fees", bt.table(rep))
+        self.assertIn("TREND_D1", rep["strategies"])  # the hourly strategies still run
 
 
 if __name__ == "__main__":

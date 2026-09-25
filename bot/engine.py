@@ -305,8 +305,9 @@ class Engine:
                    f"{self.label(acct.name)} {side}{' (' + what + ')' if what else ''} {qty_text(sim['qty'])} {asset} at {px(sim['avg_price'])} "
                    f"(${sim['notional']:.2f}, fee ${sim['fee_usd']:.4f}, {sim['slippage_bps']:.1f} bp vs mid, "
                    f"{sim['levels']} book level{'s' if sim['levels'] != 1 else ''})")
-        self.alerts.trade(self.label(acct.name), "DEMO", side + (f" ({what})" if what else ""), asset, sim["qty"],
-                          sim["avg_price"], sim["notional"], sim["fee_usd"], reason)
+        if getattr(self.strategies.get(acct.name), "timeframe", "") != "1m":  # scalpers would flood Telegram
+            self.alerts.trade(self.label(acct.name), "DEMO", side + (f" ({what})" if what else ""), asset, sim["qty"],
+                              sim["avg_price"], sim["notional"], sim["fee_usd"], reason)
 
     def fund_hold(self, prices, now):
         a = self.accounts[HOLD]
@@ -352,6 +353,8 @@ class Engine:
                 exp = max(0.0, exp)  # long-only accounts never go short
             acct.s["info"][a] = info
             decisions[a] = exp
+            if strat.timeframe == "1m" and exp == pos.get("exp", 0.0):
+                continue  # a 1-minute account decides every minute: only trades go in the feed (receipts keep the rest)
             self.event(strat.name, "signal",
                        f"{strat.name} {a} {strat.timeframe} close {px(windows[a][strat.timeframe][-1][4])}: "
                        f"{info.get('reason', '')} (target {exp:.0%} of the {a} sleeve)")

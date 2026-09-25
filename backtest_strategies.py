@@ -12,6 +12,10 @@ Each strategy runs a 50% BTC and 50% ETH sleeve. It decides on closed candles of
 timeframe (the same decide() code the live engine uses), trades at that candle's close, and is
 marked to market every hour.
 
+Fast strategies on 1-minute candles (SCALP_*) cannot use eight years of minute data, so they
+are tested on the last 90 days of 1-minute candles: the first 45 days in-sample, the last 45
+days out-of-sample. They decide and trade on every 1-minute close and are marked every hour.
+
 Verdict: a strategy that loses money out of sample at either fee is marked FAILED BACKTEST.
 It still runs in demo, and the dashboard shows the flag. Coins listed after 2022 (PEPE, ...)
 have no in-sample period; they are judged on 2023+ alone and the table says "n/a" in-sample.
@@ -27,7 +31,8 @@ from bot import candles as cd
 from bot import strategies
 from bot.exchange import BinanceSpot
 
-H, D = cd.HOUR, cd.INTERVAL_MS["1d"]
+H, D, M = cd.HOUR, cd.INTERVAL_MS["1d"], cd.INTERVAL_MS["1m"]
+SCALP_DAYS = 90  # 1-minute test window: first half in-sample, second half out-of-sample
 FEES = (0.001, 0.004)
 BINANCE_START = 1502928000000  # 2017-08-17, first Binance candle; used as warm-up only
 IS = (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2023, 1, 1, tzinfo=timezone.utc))
@@ -46,8 +51,8 @@ def day(t):
 
 # ---------- data ----------
 
-def load_cache(symbol):
-    path = os.path.join(CACHE, f"{symbol}_1h.csv")
+def load_cache(symbol, interval="1h"):
+    path = os.path.join(CACHE, f"{symbol}_{interval}.csv")
     if not os.path.exists(path):
         return []
     with open(path) as f:
@@ -55,9 +60,9 @@ def load_cache(symbol):
                 for r in csv.reader(f)]
 
 
-def save_cache(symbol, rows):
+def save_cache(symbol, rows, interval="1h"):
     os.makedirs(CACHE, exist_ok=True)
-    with open(os.path.join(CACHE, f"{symbol}_1h.csv"), "w", newline="") as f:
+    with open(os.path.join(CACHE, f"{symbol}_{interval}.csv"), "w", newline="") as f:
         csv.writer(f).writerows(rows)
 
 
@@ -84,6 +89,33 @@ def hourly(symbol, offline=False):
         rows = cd.closed([dedup[k] for k in sorted(dedup)], "1h", int(time.time() * 1000))
         save_cache(symbol, rows)
     return cd.closed(rows, "1h", int(time.time() * 1000))
+
+
+def minutes(symbol, offline=False, days=SCALP_DAYS):
+    """The last `days` (plus a day of warm-up) of closed 1-minute candles, cached in data/cache/."""
+    now = int(time.time() * 1000)
+    since = now - (days + 1) * D
+    rows = [r for r in load_cache(symbol, "1m") if r[0] >= since]
+    if not offline:
+        api = BinanceSpot()
+        t = rows[-1][0] + M if rows else since
+        n = 0
+        while t < now:
+            batch = api.klines(symbol, "1m", limit=1000, start_ms=t)
+            if not batch:
+                break
+            rows += [k[:6] for k in batch]
+            t = batch[-1][0] + M
+            n += 1
+            if n % 25 == 0:
+                print(f"  {symbol}: {len(rows):,} one-minute candles, up to {day(t)}", file=sys.stderr)
+            if len(batch) < 1000:
+                break
+            time.sleep(0.05)
+        dedup = {r[0]: r for r in rows}
+        rows = cd.closed([dedup[k] for k in sorted(dedup)], "1m", now)
+        save_cache(symbol, rows, "1m")
+    return cd.closed(rows, "1m", now)
 
 
 # ---------- simulation ----------
@@ -117,7 +149,21 @@ def exposure_path(strategy, asset, h1):
     return path
 
 
-def sleeve(path, fee, borrow=0.0):
+def minute_path(strategy, asset, m1):
+    """Like exposure_path for 1-minute strategies: decide on every 1-minute close."""
+    n = strategy.needs["1m"]
+    pos, path = {}, []
+    for i, bar in enumerate(m1):
+        t = bar[0] + M
+        exp, _ = strategy.decide(asset, {"1m": m1[max(0, i + 1 - n):i + 1]}, pos, t)
+        prev = pos.get("exp", 0.0)
+        if exp != prev:
+            strategies.on_fill(pos, "BUY" if exp > prev else "SELL", bar[4], t, exp)
+        path.append((t, bar[4], pos.get("exp", 0.0)))
+    return path
+
+
+def sleeve(path, fee, borrow=0.0, steps_per_year=365 * 24, mark_ms=0):
     """Hourly equity curve plus trades and round trips (entry time, exit time, won?).
 
     Holds a fixed coin quantity between trades, like the demo account: when the exposure
@@ -126,14 +172,17 @@ def sleeve(path, fee, borrow=0.0):
 
     Negative exposure is a simulated 1x short (long/short accounts): selling borrowed coins,
     paying `borrow` a year on the short's value, and buying them back to close. A change of
-    direction closes the old side before opening the new one."""
+    direction closes the old side before opening the new one.
+
+    `steps_per_year` is how many path points make a year (hourly by default); with `mark_ms`
+    the equity curve keeps only points on that grid (a 1-minute path marked every hour)."""
     cash, qty, prev_e = 1.0, 0.0, 0.0
     curve, trades, trips = {}, [], []
     entry = None
-    per_hour = borrow / (365 * 24)
+    per_step = borrow / steps_per_year
     for t, c, e in path:
         if qty < 0:
-            cash -= -qty * c * per_hour
+            cash -= -qty * c * per_step
         if e != prev_e and (prev_e < 0 or e < 0):
             if qty:  # close the open side
                 cash += qty * c * (1 - fee) if qty > 0 else qty * c * (1 + fee)
@@ -169,7 +218,8 @@ def sleeve(path, fee, borrow=0.0):
                 trips.append((entry[0], t, cash > entry[1]))
                 entry = None
         prev_e = e
-        curve[t] = cash + qty * c
+        if not mark_ms or t % mark_ms == 0:
+            curve[t] = cash + qty * c
     return curve, trades, trips
 
 
@@ -216,9 +266,10 @@ def horizons(series):
     return out
 
 
-def evaluate(paths, weights, fee, periods, borrow=0.0):
+def evaluate(paths, weights, fee, periods, borrow=0.0, minute=False):
     """paths: {asset: exposure path}. Returns {period_name: stats + trades + win rate}."""
-    sl = {a: sleeve(p, fee, borrow) for a, p in paths.items()}
+    step = {"steps_per_year": 365 * 24 * 60, "mark_ms": H} if minute else {}
+    sl = {a: sleeve(p, fee, borrow, **step) for a, p in paths.items()}
     curves = {a: s[0] for a, s in sl.items()}
     out = {}
     for name, (t0, t1) in periods.items():
@@ -248,21 +299,45 @@ def verdict(results, benchmark=False):
     return "PASSED", "made money out of sample at 0.1% and 0.4% fees"
 
 
-def run(hist, cfg, periods=None):
+def minute_periods(m1s, days=SCALP_DAYS):
+    """The last `days` of the 1-minute data every coin has: first half in-sample, second half out-of-sample."""
+    end = min(rows[-1][0] + M for rows in m1s)
+    start = end - days * D
+    mid = start + days * D // 2
+    return {"is": (start, mid), "oos": (mid, end + 1)}
+
+
+def run(hist, cfg, periods=None, minute_hist=None, minute_days=SCALP_DAYS):
+    """minute_hist: {coin: 1-minute candles} for the 1-minute strategies; without it they are left out."""
     periods = periods or {"is": (ms(IS[0]), ms(IS[1])), "oos": (ms(OOS[0]), ms(OOS[1]))}
+    minute_hist = minute_hist or {}
     report = {"strategies": {}}
     for s in strategies.build(cfg):
         weights = s.sleeves
-        if not all(hist.get(a) for a in weights):
+        minute = s.timeframe == "1m"
+        src = minute_hist if minute else hist
+        if not all(src.get(a) for a in weights):
             continue  # no price history for a coin (run_and_save loads every coin the config uses)
-        paths = {a: exposure_path(s, a, hist[a]) for a in weights}
+        if minute:
+            paths = {a: minute_path(s, a, src[a]) for a in weights}
+            per = minute_periods([src[a] for a in weights], minute_days)
+        else:
+            paths = {a: exposure_path(s, a, src[a]) for a in weights}
+            per = periods
         borrow = cfg["engine"].get("short_borrow_rate_yearly", 0.10) if getattr(s, "allows_short", False) else 0.0
-        res = {str(fee): evaluate(paths, weights, fee, periods, borrow) for fee in FEES}
+        res = {str(fee): evaluate(paths, weights, fee, per, borrow, minute) for fee in FEES}
         v, why = verdict(res, getattr(s, "benchmark", False))
         report["strategies"][s.name] = {"verdict": v, "why": why, "rule": s.rule, "results": res,
                                         "demo_fee": str(getattr(s, "fee_rate", FEES[0])),
                                         "coins": list(weights), "group": getattr(s, "group", "BTC & ETH"),
-                                        "allows_short": getattr(s, "allows_short", False)}
+                                        "allows_short": getattr(s, "allows_short", False),
+                                        "timeframe": s.timeframe}
+        if minute:  # what the same trades would have made with no fees at all: how much the fees take
+            gross = evaluate(paths, weights, 0.0, per, borrow, minute)
+            report["strategies"][s.name]["no_fee"] = {k: {"return": r["return"]} for k, r in gross.items()}
+            report["strategies"][s.name]["test"] = (f"1-minute candles, in-sample {day(per['is'][0])} to "
+                                                    f"{day(per['is'][1])}, out-of-sample {day(per['oos'][0])} to "
+                                                    f"{day(per['oos'][1] - 1)}")
     weights = strategies.SLEEVES
     hold = {a: [(r[0] + H, r[4], 1.0) for r in hist[a]] for a in weights}
     report["hold"] = evaluate(hold, weights, 0.0, periods)
@@ -295,25 +370,41 @@ def table(report):
             f"out-of-sample {report['hold']['oos']['start']} to {oos_end}. Each strategy on its own coins "
             f"(50% of the account per coin, the rest in cash), hourly marks. Trades count every buy or sell.")
     why = [f"- {n}: {s['verdict']} ({s['why']})" for n, s in report["strategies"].items()]
+    for n, s in report["strategies"].items():
+        if "no_fee" in s:
+            o = s["results"][str(FEES[0])]["oos"]
+            why.append(f"- {n} was tested on {s['test']}. Out of sample it made {pct(s['no_fee']['oos']['return'])} "
+                       f"before fees and {pct(o['return'])} after 0.1% fees, over {o['trades']} trades.")
     return "\n".join([head, ""] + lines + [""] + why)
 
 
 def run_and_save(offline=False):
     """Download/refresh candles, run the backtest, save RESULTS, print the table. Returns the report."""
     cfg = json.load(open("config.json"))
-    hist = {}
-    coins = list(strategies.SLEEVES)
+    hist, minute_hist = {}, {}
+    coins, minute_coins = list(strategies.SLEEVES), []
     for s in strategies.build(cfg):
-        coins += [a for a in s.sleeves if a not in coins]
+        if s.timeframe == "1m":
+            minute_coins += [a for a in s.sleeves if a not in minute_coins]
+        else:
+            coins += [a for a in s.sleeves if a not in coins]
+    for a in minute_coins:
+        print(f"Loading the last {SCALP_DAYS} days of {a}USDT 1-minute candles{' (cache only)' if offline else ''}...",
+              file=sys.stderr)
+        minute_hist[a] = minutes(f"{a}USDT", offline)
+        if not minute_hist[a]:
+            raise OSError(f"no cached {a}USDT 1-minute candles in {CACHE}/")
+        print(f"  {a}: {len(minute_hist[a]):,} candles", file=sys.stderr)
     for a in coins:
         print(f"Loading {a}USDT hourly candles{' (cache only)' if offline else ''}...", file=sys.stderr)
         hist[a] = hourly(f"{a}USDT", offline)  # OSError when the data API is unreachable
         if not hist[a]:
             raise OSError(f"no cached {a}USDT candles in {CACHE}/")
         print(f"  {a}: {len(hist[a]):,} candles, {day(hist[a][0][0])} to {day(hist[a][-1][0] + H)}", file=sys.stderr)
-    report = run(hist, cfg)
+    report = run(hist, cfg, minute_hist=minute_hist)
     report["generated_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    report["data_source"] = "Binance spot 1h klines (data-api.binance.vision), 4h and 1d built from them"
+    report["data_source"] = ("Binance spot 1h klines (data-api.binance.vision), 4h and 1d built from them; "
+                             f"1m klines for the last {SCALP_DAYS} days for the 1-minute strategies")
     os.makedirs(os.path.dirname(RESULTS), exist_ok=True)
     with open(RESULTS, "w") as f:
         json.dump(report, f, indent=1)

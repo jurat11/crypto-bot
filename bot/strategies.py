@@ -12,6 +12,9 @@ The same decide() code runs in backtest_strategies.py and in the live engine.
                or a 3% trailing stop (from the highest close since entry).
   MEANREV_H1   buy when RSI(2) on 1h < 5 while price is above the daily SMA50;
                sell when RSI(2) > 70, after 12 hours, or on a 3% stop.
+  SCALP        fast long/short trades on 1-minute candles (demo only, simulated
+               shorts): go with a 0.1%+ move of the last 15 minutes, close at
+               +0.3%, -0.3% or after 30 minutes, then look for the next one.
 
 `pos` is the per-asset position memory kept by the caller:
   {"in": bool, "entry": price, "entry_ms": candle close ms, "peak": price, "exp": applied exposure}
@@ -62,14 +65,16 @@ def rsi(closes, n=2):
 
 
 def on_fill(pos, side, price, decision_ms, exposure):
-    """Update position memory after an order for this sleeve filled."""
+    """Update position memory after an order for this sleeve filled. A new position (long, or a
+    simulated short) records its entry; resizing keeps it; going to cash clears it."""
+    prev = pos.get("exp", 0.0)
     pos["exp"] = exposure
-    if side == "BUY" and not pos.get("in"):
-        pos.update({"in": True, "entry": price, "entry_ms": decision_ms, "peak": price})
-    elif side == "SELL" and exposure == 0:
+    if exposure == 0:
         for k in ("entry", "entry_ms", "peak"):
             pos.pop(k, None)
         pos["in"] = False
+    elif not pos.get("in") or (prev > 0) != (exposure > 0):
+        pos.update({"in": True, "entry": price, "entry_ms": decision_ms, "peak": price})
 
 
 def _pct(price, level):
@@ -322,8 +327,77 @@ class LongShortD1(Strategy):
         return f"{asset}: flat, price is {d:+.1%} vs the SMA50 ({level(info['sma'])}); opens at the next daily close"
 
 
+class Scalp(Strategy):
+    """Fast trades: long or short for minutes at a time, over and over (demo only).
+
+    The rules were fixed before the backtest ran and are not tuned:
+      entry, when flat: the last 15 one-minute closes moved at least 0.1% and the close is on the
+        same side of its 60-minute average -> go with the move (up = long, down = simulated short)
+      exit: +0.3% take profit, -0.3% stop, or 30 minutes, checked on every 1-minute close.
+    Every round trip pays the fee twice, so the average win has to beat the fees."""
+    name, timeframe, allows_short = "SCALP", "1m", True
+    LOOKBACK, AVG, MOVE, TAKE, STOP, MAX_HOLD_MS = 15, 60, 0.001, 0.003, 0.003, 30 * 60_000
+    EPS = 1e-9  # a price exactly on a level counts as reaching it (float rounding)
+    needs = {"1m": 61}
+    rule = ("Every minute: go with a 0.1%+ move of the last 15 minutes (long if up, short if down, on the same "
+            "side of the 1-hour average); close at +0.3%, -0.3% or after 30 minutes. Simulated shorts, 1x.")
+
+    def decide(self, asset, candles, pos, now_ms):
+        m = candles["1m"]
+        e = pos.get("exp", 0.0)
+        if len(m) < self.AVG + 1:
+            return e, {"reason": "not enough 1-minute history"}
+        closes = [r[4] for r in m]
+        close = closes[-1]
+        avg = sum(closes[-self.AVG:]) / self.AVG
+        move = close / closes[-1 - self.LOOKBACK] - 1
+        info = {"close": close, "avg60": avg, "move15": move}
+        if e:
+            entry = pos.get("entry") or close
+            gain = (close / entry - 1) * (1 if e > 0 else -1)
+            entry_ms = pos.get("entry_ms")
+            held = now_ms - (now_ms if entry_ms is None else entry_ms)
+            side = "long" if e > 0 else "short"
+            info.update(entry=entry, gain=gain, held_min=round(held / 60_000))
+            if gain >= self.TAKE - self.EPS:
+                info["reason"] = f"close {side}: +{self.TAKE:.1%} take profit"
+                return 0.0, info
+            if gain <= -self.STOP + self.EPS:
+                info["reason"] = f"close {side}: -{self.STOP:.1%} stop"
+                return 0.0, info
+            if held >= self.MAX_HOLD_MS:
+                info["reason"] = f"close {side}: 30 minute time exit"
+                return 0.0, info
+            info["reason"] = f"holding {side}: {gain:+.2%} since entry"
+            return e, info
+        if move >= self.MOVE - self.EPS and close > avg:
+            info["reason"] = f"open long: up {move:.2%} in 15 minutes, above the 1-hour average"
+            return 1.0, info
+        if move <= -self.MOVE + self.EPS and close < avg:
+            info["reason"] = f"open short: down {-move:.2%} in 15 minutes, below the 1-hour average"
+            return -1.0, info
+        info["reason"] = f"waiting: {move:+.2%} in 15 minutes (needs 0.1% on the same side as the 1-hour average)"
+        return 0.0, info
+
+    def describe(self, asset, info, price, pos):
+        if "avg60" not in info:
+            return f"{asset}: {info.get('reason', 'waiting for data')}"
+        e = pos.get("exp", 0.0)
+        if e:
+            entry = pos.get("entry") or price
+            sign = 1 if e > 0 else -1
+            gain = (price / entry - 1) * sign
+            take, stop = entry * (1 + sign * self.TAKE), entry * (1 - sign * self.STOP)
+            side = "LONG" if e > 0 else "SHORT (simulated)"
+            return (f"{asset}: {side} since {_hhmm(pos.get('entry_ms', 0))} at {level(entry)}, {gain:+.2%} now; "
+                    f"takes profit at {level(take)}, stops at {level(stop)}, "
+                    f"or closes at {_hhmm((pos.get('entry_ms') or 0) + self.MAX_HOLD_MS)}")
+        return (f"{asset}: flat, {info['move15']:+.2%} in the last 15 minutes; opens long above +0.1% "
+                f"(and above the 1-hour average {level(info['avg60'])}), short below -0.1%")
+
+
 BASES = {"TREND_D1": TrendD1, "TREND_H4": TrendH4, "BREAKOUT_H1": BreakoutH1, "MEANREV_H1": MeanRevH1, "HOLD": Hold,
-         "LS_TREND": LongShortD1}
+         "LS_TREND": LongShortD1, "SCALP": Scalp}
 
 
 def build(cfg):

@@ -141,8 +141,9 @@ class LongShort(unittest.TestCase):
     def test_config_accounts(self):
         all_ = {s.name: s for s in strategies.build(CFG)}
         ls = [s for s in all_.values() if s.allows_short]
-        self.assertEqual({s.name for s in ls}, {"LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD"})
-        self.assertFalse(any(s.allows_short for s in all_.values() if s.group != "Long/short (simulated)"))
+        self.assertEqual({s.name for s in ls}, {"LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD", "SCALP_BTC_ETH", "SCALP_MEME"})
+        simulated = ("Long/short (simulated)", "Scalping (simulated)")
+        self.assertFalse(any(s.allows_short for s in all_.values() if s.group not in simulated))
         self.assertTrue(all(sum(s.sleeves.values()) <= 1.0 for s in ls))  # 1x, no leverage
 
 
@@ -278,6 +279,68 @@ class MeanRevH1(unittest.TestCase):
         self.assertEqual((pos["in"], pos["entry"], pos["entry_ms"], pos["exp"]), (True, 101.0, T0, 1.0))
         strategies.on_fill(pos, "SELL", 103.0, T0 + H, 0.0)
         self.assertEqual(pos, {"in": False, "exp": 0.0})
+
+
+class Scalp(unittest.TestCase):
+    s = strategies.Scalp()
+    M = 60_000
+
+    def minutes(self, last15):
+        """60 flat one-minute closes at 100, then 15 more ending at `last15` (a straight line)."""
+        ramp = [100 + (last15 - 100) * (i + 1) / 15 for i in range(15)]
+        return {"1m": bars([100.0] * 46 + ramp, step=self.M)}
+
+    def test_goes_with_a_move_of_the_last_15_minutes(self):
+        exp, info = self.s.decide("BTC", self.minutes(100.2), {}, 0)
+        self.assertEqual(exp, 1.0)  # up 0.2% and above the 1-hour average: long
+        self.assertIn("open long", info["reason"])
+        exp, info = self.s.decide("BTC", self.minutes(99.8), {}, 0)
+        self.assertEqual(exp, -1.0)  # down 0.2%: simulated short
+        self.assertIn("open short", info["reason"])
+        self.assertEqual(self.s.decide("BTC", self.minutes(100.05), {}, 0)[0], 0.0)  # too small a move: wait
+
+    def test_take_profit_and_stop_for_a_long(self):
+        pos = {"exp": 1.0, "entry": 100.0, "entry_ms": 0}
+        exp, info = self.s.decide("BTC", self.minutes(100.3), pos, 10 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close long: +0.3% take profit"))
+        exp, info = self.s.decide("BTC", self.minutes(99.7), pos, 10 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close long: -0.3% stop"))
+        self.assertEqual(self.s.decide("BTC", self.minutes(100.1), pos, 10 * self.M)[0], 1.0)  # keeps holding
+
+    def test_a_short_wins_when_the_price_falls(self):
+        pos = {"exp": -1.0, "entry": 100.0, "entry_ms": 0}
+        exp, info = self.s.decide("BTC", self.minutes(99.7), pos, 10 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close short: +0.3% take profit"))
+        exp, info = self.s.decide("BTC", self.minutes(100.3), pos, 10 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close short: -0.3% stop"))
+
+    def test_closes_after_30_minutes(self):
+        pos = {"exp": 1.0, "entry": 100.0, "entry_ms": 0}
+        self.assertEqual(self.s.decide("BTC", self.minutes(100.1), pos, 29 * self.M)[0], 1.0)
+        exp, info = self.s.decide("BTC", self.minutes(100.1), pos, 30 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close long: 30 minute time exit"))
+
+    def test_describe(self):
+        _, info = self.s.decide("BTC", self.minutes(99.9), {"exp": -1.0, "entry": 100.0, "entry_ms": 0}, self.M)
+        text = self.s.describe("BTC", info, 99.9, {"exp": -1.0, "entry": 100.0, "entry_ms": 0})
+        self.assertIn("SHORT (simulated)", text)
+        self.assertIn("takes profit at 99.7000", text)
+        self.assertIn("stops at 100.30", text)
+        _, info = self.s.decide("BTC", self.minutes(100.05), {}, 0)
+        self.assertIn("flat", self.s.describe("BTC", info, 100.05, {}))
+
+    def test_on_fill_records_the_entry_of_a_short(self):
+        pos = {}
+        strategies.on_fill(pos, "SELL", 100.0, 5, -1.0)
+        self.assertEqual((pos["entry"], pos["entry_ms"], pos["exp"]), (100.0, 5, -1.0))
+        strategies.on_fill(pos, "BUY", 99.0, 9, 0.0)
+        self.assertNotIn("entry", pos)
+        self.assertEqual(pos["exp"], 0.0)
+
+    def test_config_accounts(self):
+        sc = [s for s in strategies.build(CFG) if s.base == "SCALP"]
+        self.assertEqual({s.name for s in sc}, {"SCALP_BTC_ETH", "SCALP_MEME"})
+        self.assertTrue(all(s.timeframe == "1m" and s.allows_short and sum(s.sleeves.values()) <= 1.0 for s in sc))
 
 
 if __name__ == "__main__":

@@ -330,6 +330,56 @@ class LongShortAccounts(EngineCase):
         self.assertEqual(eng.accounts["STUB_H1"].s["pos"]["BTC"].get("exp", 0.0), 0.0)
 
 
+class RampPublic(FakePublic):
+    """1-minute BTC candles rising 0.02% a minute into the current price (a scalper's long signal)."""
+
+    def klines(self, symbol, interval, limit=500, start_ms=None, end_ms=None):
+        rows = super().klines(symbol, interval, limit, start_ms, end_ms)
+        if interval != "1m" or symbol != "BTCUSDT":
+            return rows
+        n = len(rows)
+        return [(r[0],) + (r[4] * (1 - 0.0002 * (n - 1 - i)),) * 4 + tuple(r[5:]) for i, r in enumerate(rows)]
+
+
+class TradeLog(Alerts):
+    def __init__(self):
+        super().__init__(None, enabled=False)
+        self.trades = []
+
+    def trade(self, *a, **k):
+        self.trades.append(a)
+
+
+class Scalping(EngineCase):
+    def test_scalper_opens_takes_profit_and_stays_quiet(self):
+        self.public = RampPublic(self.clock)
+        self.feed = MarketFeed(["BTCUSDT", "ETHUSDT"], self.public, clock=self.clock)
+        self.feed.poll_once()
+        st = strategies.Scalp()
+        log = TradeLog()
+        eng = self.engine([st], alerts=log)
+        eng.tick()
+        acct = eng.accounts["SCALP"]
+        self.assertGreater(acct.s["holdings"]["BTC"], 0)  # BTC rose 0.3% in 15 minutes: long
+        self.assertEqual(acct.s["holdings"]["ETH"], 0.0)  # ETH is flat: waits
+        entry = acct.s["pos"]["BTC"]["entry"]
+        self.minute(eng)  # nothing moved: keeps holding, and the feed gets no per-minute signal lines
+        signals = [e for e in self.store.recent_events() if e["kind"] == "signal"]
+        self.assertEqual(len(signals), 1)  # only the one that opened the trade
+        self.assertEqual(len(self.store.receipts(account="SCALP")), 4)  # but every decision has a receipt
+        self.public.prices["BTCUSDT"] *= 1.004
+        self.minute(eng)
+        self.assertEqual(acct.s["pos"]["BTC"]["exp"], 0.0)  # +0.3% reached: closed
+        self.assertLess(acct.s["holdings"]["BTC"], 0.00001)  # at most one exchange step of dust (the buy fee is paid in BTC)
+        self.assertEqual((acct.s["sells"], acct.s["wins"]), (1, 1))
+        legs = [f["reason"].split(":")[0] for f in self.store.recent_fills() if f["account"] == "SCALP"]
+        self.assertEqual(legs, ["close long", "open long"])
+        self.assertGreater(self.public.prices["BTCUSDT"] * 0.9998, entry * 1.003)
+        self.assertEqual([t for t in log.trades if t[0] == "SCALP"], [])  # scalper fills never go to Telegram
+        self.assertTrue(any(t[0].startswith("Hold") for t in log.trades))  # other accounts' fills still do
+        self.assertIn("SCALP", {r["account"] for r in eng.snapshot()["leaderboard"]})
+
+
 class Decisions(EngineCase):
     def test_buys_on_closed_candle_and_writes_receipt(self):
         eng = self.engine()

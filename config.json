@@ -22,7 +22,7 @@
     "fee_rate": 0.001,
     "strategies": ["TREND_D1", "TREND_H4", "BREAKOUT_H1", "MEANREV_H1", "D1_ALL_IN", "D1_FAST", "D1_HIGH_FEE",
                    "ALTS_TREND", "ALTS_HOLD", "MEME_TREND", "MEME_HOLD", "GOLD_TREND", "GOLD_HOLD",
-                   "LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD"],
+                   "LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD", "SCALP_BTC_ETH", "SCALP_MEME"],
     "variants": [
       {"name": "D1_ALL_IN", "base": "TREND_D1", "start_cash": 20.0, "overrides": {"vol_target": 0},
        "note": "riskier: TREND_D1 without the volatility dial, always the full sleeve when above SMA50"},
@@ -53,7 +53,12 @@
       {"name": "LS_MEME", "base": "LS_TREND", "group": "Long/short (simulated)", "start_cash": 20.0,
        "sleeves": {"DOGE": 0.5, "PEPE": 0.5}, "note": "the same long/short rule on DOGE and PEPE (memecoin shorts can be squeezed hard)"},
       {"name": "LS_GOLD", "base": "LS_TREND", "group": "Long/short (simulated)", "start_cash": 20.0,
-       "sleeves": {"PAXG": 0.5}, "note": "the same long/short rule on gold (PAXG), half the account"}
+       "sleeves": {"PAXG": 0.5}, "note": "the same long/short rule on gold (PAXG), half the account"},
+      {"name": "SCALP_BTC_ETH", "base": "SCALP", "group": "Scalping (simulated)", "start_cash": 20.0,
+       "sleeves": {"BTC": 0.5, "ETH": 0.5},
+       "note": "fast trades: long or short for minutes, closes at +0.3%, -0.3% or after 30 minutes, then looks for the next one"},
+      {"name": "SCALP_MEME", "base": "SCALP", "group": "Scalping (simulated)", "start_cash": 20.0,
+       "sleeves": {"DOGE": 0.5, "PEPE": 0.5}, "note": "the same fast long/short trades on DOGE and PEPE"}
     ],
     "testnet_strategy": "TREND_D1",
     "apply_exchange_filters": true,
