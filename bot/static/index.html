@@ -439,7 +439,7 @@ function boardRow(r, i) {
   const name = el("td", { title: [r.rule, r.note].filter(Boolean).join(" — ") }, keyFor(r.account), el("span", { class: "acct" }, r.label),
     verdictBadge(r),
     r.testnet ? el("span", { class: "badge tn", title: "orders are also sent to Binance Spot Testnet" }, "testnet") : null,
-    el("div", { class: "sub", style: "margin-left:20px" }, `${r.timeframe || "hold"}${r.allows_short ? " · long/short (simulated)" : ""} · started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)}`),
+    el("div", { class: "sub", style: "margin-left:20px" }, `${r.timeframe || "hold"}${r.allows_short ? " · long/short" : ""} · started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)}`),
     el("div", { class: "pos-inline" }, positionChips(r)));
   return el("tr", {},
     el("td", { class: "num sub" }, i + 1), name, el("td", { class: "poscol" }, positionChips(r)),
