@@ -1,6 +1,6 @@
 """Live dashboard: python3 -m bot.server  ->  http://localhost:8000
 
-On the first launch it runs backtest_strategies.py (about a minute), prints the
+On the first launch it runs backtest_strategies.py (a few minutes), prints the
 table, and only then puts the strategies into demo: a strategy with no backtest
 result never trades. Then it starts the market feed, the demo engine, the
 optional testnet worker and a FastAPI app that streams the engine snapshot over
@@ -127,7 +127,7 @@ def ensure_backtest(cfg):
     backtest = load_backtest()
     if all(n in backtest for n in cfg["engine"]["strategies"]):
         return backtest
-    print("First launch: running the backtest before any strategy trades in demo (about a minute)...")
+    print("Running the backtest before new strategies trade in demo (a few minutes: it downloads 1-minute candles too)...")
     try:
         import backtest_strategies
         backtest_strategies.run_and_save()

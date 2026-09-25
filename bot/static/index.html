@@ -88,7 +88,7 @@ h2 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.005em; }
 .card-head .sub { margin-left: auto; }
 .sub { color: var(--muted); font-size: 12px; }
 .grid { display: grid; gap: 14px; }
-.charts { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.charts { grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); }
 .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; }
 @media (max-width: 1240px) { .two { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 980px) { .charts { grid-template-columns: minmax(0, 1fr); } }
@@ -229,6 +229,9 @@ dialog::backdrop { background: rgba(0,0,0,0.45); }
       <section class="card"><div class="card-head"><h2>Long/short</h2><span class="sub">simulated shorts</span></div>
         <div class="legend" id="legend-2"></div>
         <div class="chart-box"><canvas id="chart-2" role="img" aria-label="Profit or loss of the simulated long/short accounts since their start, in percent; the leaderboard has the same numbers"></canvas></div></section>
+      <section class="card"><div class="card-head"><h2>Scalping</h2><span class="sub">fast trades, simulated shorts</span></div>
+        <div class="legend" id="legend-3"></div>
+        <div class="chart-box"><canvas id="chart-3" role="img" aria-label="Profit or loss of the scalping accounts since their start, in percent; the leaderboard has the same numbers"></canvas></div></section>
     </div>
     <p class="sub" id="chart-note" style="margin:10px 2px 0">Charts: one point per minute, the last one moves every second. Click a name in a legend to hide or show its line. Colours are per chart.</p>
   </section>
@@ -324,9 +327,10 @@ const flash = (node, now, before) => {
 };
 
 // ---------- groups and colours (fixed per account within its group; at most 8 per chart) ----------
-const GROUPS = ["BTC & ETH", "More coins", "Long/short (simulated)"];
+const GROUPS = ["BTC & ETH", "More coins", "Long/short (simulated)", "Scalping (simulated)"];
 const GROUP_NOTE = { "More coins": "altcoins, memecoins, gold · $20 each",
-  "Long/short (simulated)": "picks long or short itself · shorts simulated at 1x with a 10%/yr borrow cost" };
+  "Long/short (simulated)": "picks long or short itself · shorts simulated at 1x with a 10%/yr borrow cost",
+  "Scalping (simulated)": "long or short for minutes at a time · closes at ±0.3% or after 30 min · pays the fee on every open and close" };
 const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
                D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
 const groupOf = {};
@@ -534,7 +538,7 @@ function renderFills(fills) {
 }
 
 // ---------- P&L charts (one per group, at most 8 colours each) ----------
-let charts = [null, null, null], equityHist = null, labels = {}, starts = {};
+let charts = [null, null, null, null], equityHist = null, labels = {}, starts = {};
 const hiddenLines = new Set();
 const toPoint = (acct, x, bal) => ({ x, y: (bal / (starts[acct] || 15) - 1) * 100, bal });
 function datasetFor(acct, pts) {
@@ -588,10 +592,10 @@ function buildChart() {
   if (!window.Chart) { $("chart-note").textContent = "Chart.js could not load from the CDN. Every number in the leaderboard is still live."; return; }
   Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
   Chart.defaults.color = css("--muted");
-  charts = [0, 1, 2].map((i) => makeChart($("chart-" + i)));
+  charts = [0, 1, 2, 3].map((i) => makeChart($("chart-" + i)));
 }
 function renderLegend() {
-  [0, 1, 2].forEach((i) => {
+  [0, 1, 2, 3].forEach((i) => {
     const accts = Object.keys(labels).filter((a) => chartIndex(a) === i);
     $("legend-" + i).replaceChildren(...accts.map((a) => {
       const b = el("button", { type: "button", "aria-pressed": String(!hiddenLines.has(a)), title: "show or hide this line" }, keyFor(a), labels[a]);
@@ -662,7 +666,10 @@ async function loadBacktest() {
       const coins = (st.coins && st.coins.join(",") !== "BTC,ETH" ? ` ${st.coins.join(", ")}` : "")
         + (st.allows_short ? " · long/short, simulated" : "");
       rows.push(el("tr", {},
-        el("td", {}, i === 0 ? el("span", {}, keyFor(name), el("strong", {}, name), el("span", { class: "sub" }, coins)) : ""),
+        el("td", {}, i === 0 ? el("span", {}, keyFor(name), el("strong", {}, name), el("span", { class: "sub" }, coins),
+            st.test ? el("div", { class: "sub", style: "margin-left:20px" }, "tested on " + st.test) : null)
+          : st.no_fee ? el("div", { class: "sub", style: "margin-left:20px" },
+            `with no fees at all it would have made ${fmtPct(st.no_fee.oos["return"], 1, true)} out of sample`) : ""),
         cell(fmtPct(+fee, 1)), cell(fmtPct(r.is.cagr, 1)), cell(fmtPct(r.is.max_dd, 0)),
         cell(fmtPct(r.oos.cagr, 1), true, sgnClass(r.oos.cagr)), cell(fmtPct(r.oos["return"], 1, true), true, sgnClass(r.oos["return"])),
         cell(fmtPct(r.oos.max_dd, 0)), cell(r.oos.trades), cell(r.oos.win_rate == null ? "–" : fmtPct(r.oos.win_rate, 0)),
@@ -752,7 +759,7 @@ $("stop-yes").onclick = async () => {
 };
 
 // Re-read theme colours when the OS theme flips.
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { charts.forEach((c) => c && c.destroy()); charts = [null, null, null]; buildChart(); loadHistory(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { charts.forEach((c) => c && c.destroy()); charts = [null, null, null, null]; buildChart(); loadHistory(); });
 
 showTab(location.hash.slice(1) || "overview");
 initFilters(); buildChart(); loadHistory(); loadBacktest(); connect();

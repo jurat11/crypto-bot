@@ -89,3 +89,13 @@ What it shows:
 - **BREAKOUT_H1 depends on fees.** It made money at 0.1% (13% a year, far behind holding) and lost at 0.4%. It fails the "loses at either fee" rule.
 - **MEANREV_H1 is the section 2 trap again.** It won 57% of trades and still lost 43% OOS at the cheapest fee. The losing trades were larger than the winners, and 1,834 trades paid a fee every time.
 - All four still run in demo. The two that failed are flagged FAILED BACKTEST on the dashboard. **Past results do not predict future results.**
+
+## 7. Scalping accounts: rules fixed before the backtest (Sep 25, 2026)
+Asked for: fast trades that go long or short, close after a small move, and repeat. Two $20 demo accounts, SCALP_BTC_ETH and SCALP_MEME (DOGE, PEPE), with simulated 1x shorts. The rules below were written down before any backtest ran and will not be tuned:
+- **Decide on every 1-minute close.** When flat in a coin: long if the last 15 minutes rose at least 0.1% and the close is above its 60-minute average; short on the mirror image.
+- **Exit:** +0.3% take profit, -0.3% stop, or 30 minutes, whichever comes first.
+- **Test window:** the last 90 days of 1-minute candles. The first 45 days are in-sample, the last 45 out-of-sample, at 0.1% and 0.4% fees. The same verdict rule as section 6 applies.
+
+The expected problem, stated before the result: each round trip pays the fee twice. At 0.1% a side, a +0.3% win keeps +0.1% and a -0.3% loss costs -0.5%, so the rule needs to win about 83% of its trades to break even. Nothing in section 1 or 2 suggests a 15-minute move predicts the next few minutes that well. The report also prints the no-fee result for these two, which shows how much of any loss is fees.
+
+The result goes here once the backtest runs on real Binance data (it needs network access to data-api.binance.vision).

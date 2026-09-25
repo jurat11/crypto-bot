@@ -8,6 +8,7 @@ Four spot strategies (long or cash, BTC and ETH) each run their own **$15 demo a
   - **Why it's only simulated:** a normal spot account can't short, because shorting needs margin (borrowing) or futures. So these accounts are marked **SIMULATED SHORTS**.
   - **The limits:** they trade at 1x with no leverage, at most 50% of the account per coin, and pay a 10%-a-year borrow cost while short (`short_borrow_rate_yearly`).
   - **Real money stays long or cash only.**
+- **Scalping accounts (demo only, simulated shorts):** two $20 accounts that trade fast, long or short for minutes at a time, taking small profits (and small losses) over and over. See "Scalping" below for why fees make this hard.
 - **LIVE: off.** `bot/broker.py` `LiveBroker` still refuses to start. The code never reads real exchange keys and never calls api.binance.com trading endpoints.
 
 ## Quick start (Mac)
@@ -19,7 +20,7 @@ cd crypto-bot-live
 python3 -m pip install -r requirements.txt
 python3 -m bot.server
 ```
-On the **first launch** it runs the backtest (about a minute), prints the table, and only then starts the demo accounts. A strategy with no backtest result never trades. Your browser then opens **http://localhost:8000**, and the same table is on the dashboard. Leave the Terminal window open while the bot runs. Ctrl+C stops it.
+On the **first launch** it runs the backtest (a few minutes), prints the table, and only then starts the demo accounts. A strategy with no backtest result never trades. Your browser then opens **http://localhost:8000**, and the same table is on the dashboard. Leave the Terminal window open while the bot runs. Ctrl+C stops it.
 
 Next time: double-click `start.command` in the `crypto-bot-live` folder, or run `cd ~/crypto-bot-live && python3 -m bot.server`. Every account carries on where it left off.
 
@@ -67,6 +68,14 @@ They go through the same backtest before they trade. None of them uses leverage.
 - **The backtest** simulates shorts the same way, borrow cost included.
 - **Memecoin shorts are the riskiest:** a squeeze can move a price far above its average quickly.
 
+**Scalping, simulated shorts ($20 each):** SCALP_BTC_ETH and SCALP_MEME (DOGE, PEPE). They decide on every 1-minute close:
+- **Open:** when it has no trade in a coin, it goes with the last 15 minutes. Up at least 0.1% (and above the 1-hour average) means long; down at least 0.1% (and below it) means short.
+- **Close:** at +0.3% profit, at -0.3% loss, or after 30 minutes, whichever comes first. Then it looks for the next trade.
+- **The catch is fees.** Every trade pays 0.1% to open and 0.1% to close. A +0.3% win keeps +0.1%; a -0.3% loss costs -0.5%. So it has to win about 5 trades out of 6 just to break even, and it makes dozens of trades a day. The backtest also shows what the same trades would have made with no fees, so you can see how much the fees take.
+- **Backtest:** eight years of 1-minute candles is too much data, so these two are tested on **the last 90 days of 1-minute candles**: the first 45 days in-sample, the last 45 out-of-sample. The rules above were fixed before the test and are not tuned.
+- **Quiet on purpose:** every minute writes a receipt, but the activity feed only shows their trades, and they never send Telegram trade alerts. The daily report still includes them.
+- **Risk rules apply:** a day that loses 8% blocks new trades until the next UTC day, and a 35% drawdown halts them.
+
 - **Half the account per coin.** The per-coin cap in the risk rules is 50%, so the gold accounts keep the other half in cash.
 - **No volatility dial.** With $10 per coin, the dial would size memecoin orders below Binance's $5 minimum.
 - **No silver.** Binance spot has no silver token.
@@ -81,7 +90,7 @@ Each strategy runs a 50% BTC and a 50% ETH sleeve and decides **only on closed c
 ## What each panel shows
 1. **Banner** (top): always "DEMO: no real money". With TESTNET=1 there is a second banner: "TESTNET: fake funds, real orders." when it works, or the reason it does not (for example "blocked by exchange location"). A red "STOPPED" banner appears while the STOP file exists.
 2. **Leaderboard:** all demo accounts, sorted by P&L. For each: balance to 4 decimals (it flashes green or red as prices move), P&L in $ and %, max drawdown since start, trade count, win rate (share of sells that made money after fees), and fees paid. Badges: *FAILED BACKTEST / backtest passed / not backtested*, *benchmark*, and *TESTNET* for the strategy mirrored to testnet. Under each name you see its cash and the $ value held in BTC and ETH.
-3. **P&L since start (%):** every account on one chart. It uses percent because accounts start with $15 or $20. There is one point per minute, and the last point moves every second. Hover to read every account at one time. The leaderboard shows the same numbers as a table.
+3. **P&L since start (%):** one chart per group (BTC & ETH, More coins, Long/short, Scalping). It uses percent because accounts start with $15 or $20. There is one point per minute, and the last point moves every second. Hover to read every account at one time. The leaderboard shows the same numbers as a table.
 4. **Backtest before demo:** the in-sample (2018-22) and out-of-sample (2023+) table for each strategy at 0.1% and 0.4% fees, next to Hold 50/50, with the PASSED / FAILED BACKTEST verdict.
 5. **What history says:** for each account, in dollars at its own size and fee: the typical (median) day, week and year from the 2023-2026 backtest, the range that 8 out of 10 periods fell in, how often each period lost money, and trades per week. **This is history, not a forecast.** 2023-2026 was mostly a rising market for crypto, and the year figures rest on only about three separate years.
 6. **Live prices:** BTC and ETH mid price, bid, ask, spread in $ and basis points, where the price came from (websocket or REST fallback), and how old it is.
