@@ -8,250 +8,302 @@
 <style>
 :root {
   color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f3f2ee;
+  --page: #f4f3ef; --surface: #fcfcfb; --surface-2: #f0efeb; --surface-3: #e8e7e1;
   --ink: #0b0b0b; --ink-2: #52514e; --muted: #6f6d68;
-  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.09);
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-  --good: #0ca30c; --good-ink: #006300; --warning: #fab219; --critical: #d03b3b; --critical-ink: #b42a2a;
-  --good-wash: rgba(12,163,12,0.10); --critical-wash: rgba(208,59,59,0.10); --warning-wash: rgba(250,178,25,0.16);
-  --accent: #2a78d6;
+  --good: #0ca30c; --good-ink: #006300; --critical: #d03b3b; --critical-ink: #b42a2a; --warning: #fab219;
+  --good-wash: rgba(12,163,12,0.10); --critical-wash: rgba(208,59,59,0.10); --warning-wash: rgba(250,178,25,0.18);
+  --accent: #2a78d6; --accent-wash: rgba(42,120,214,0.10);
+  --shadow: 0 1px 2px rgba(11,11,11,0.04), 0 4px 16px rgba(11,11,11,0.04);
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220; --surface-3: #2a2a28;
     --ink: #ffffff; --ink-2: #c3c2b7; --muted: #9a9890;
-    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.08);
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
     --good-ink: #0ca30c; --critical-ink: #e66767;
     --good-wash: rgba(12,163,12,0.16); --critical-wash: rgba(208,59,59,0.20); --warning-wash: rgba(250,178,25,0.14);
-    --accent: #3987e5;
+    --accent: #3987e5; --accent-wash: rgba(57,135,229,0.16);
+    --shadow: none;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220; --surface-3: #2a2a28;
   --ink: #ffffff; --ink-2: #c3c2b7; --muted: #9a9890;
-  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.08);
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --good-ink: #0ca30c; --critical-ink: #e66767;
   --good-wash: rgba(12,163,12,0.16); --critical-wash: rgba(208,59,59,0.20); --warning-wash: rgba(250,178,25,0.14);
-  --accent: #3987e5;
+  --accent: #3987e5; --accent-wash: rgba(57,135,229,0.16);
+  --shadow: none;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-.wrap { max-width: 1320px; margin: 0 auto; padding: 16px; }
-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
-h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.spacer { flex: 1; }
-.live { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
-.live.on .dot { background: var(--good); }
-.live.off .dot { background: var(--critical); }
+html { background: var(--page); }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
 button { font: inherit; cursor: pointer; }
-.stop-btn { background: var(--critical); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 650; }
-.stop-btn:disabled { opacity: 0.55; cursor: default; }
-.banners { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.banner { border-radius: 8px; padding: 8px 12px; font-weight: 600; border: 1px solid var(--border); background: var(--surface); }
-.banner.demo { background: var(--good-wash); border-color: transparent; }
-.banner.warn { background: var(--warning-wash); border-color: transparent; }
-.banner.bad { background: var(--critical-wash); border-color: transparent; }
-.banner.stopped { background: var(--critical); color: #fff; border-color: transparent; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
-.grid { display: grid; gap: 14px; margin-bottom: 14px; }
-.g-2 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-.g-half { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-@media (max-width: 900px) { .g-2, .g-half { grid-template-columns: minmax(0, 1fr); } }
-.scroll-x { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-td { padding: 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
-tr:last-child td { border-bottom: 0; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 8px; }
-.acct { font-weight: 600; white-space: nowrap; }
-.sub { color: var(--muted); font-size: 12px; }
-.bal { font-size: 20px; font-weight: 650; border-radius: 6px; padding: 2px 6px; transition: background-color 0.8s; }
-.bal.up { background: var(--good-wash); } .bal.down { background: var(--critical-wash); }
-@media (prefers-reduced-motion: reduce) { .bal { transition: none; } }
-.pos { color: var(--good-ink); } .neg { color: var(--critical-ink); }
-.badge { display: inline-block; font-size: 11px; font-weight: 650; border-radius: 5px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; border: 1px solid var(--border); color: var(--ink-2); }
-.badge.fail { background: var(--critical-wash); color: var(--critical-ink); border-color: transparent; }
-.badge.pass { background: var(--good-wash); color: var(--good-ink); border-color: transparent; }
-.badge.tn { background: var(--warning-wash); color: var(--ink); border-color: transparent; }
-.prices { display: grid; gap: 14px; }
-.px-name { color: var(--ink-2); font-weight: 600; }
-.px-val { font-size: 28px; font-weight: 650; letter-spacing: -0.01em; }
-.px-meta { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
-.chart-box { position: relative; height: 260px; }
-.chart-grp + .chart-grp { margin-top: 18px; }
-.chart-grp h3 { font-size: 13px; margin: 0 0 6px; font-weight: 650; }
-tr.grp td { background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 8px; }
-.px-table td { padding: 5px 6px; }
-.px-table .coin { font-weight: 650; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
-.state { padding: 10px 0; border-bottom: 1px solid var(--grid); }
-.state:last-child { border-bottom: 0; }
-.state ul { margin: 4px 0 0; padding-left: 18px; color: var(--ink); }
-.risk-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--grid); }
-.risk-row:last-child { border-bottom: 0; }
-.pill { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
-.pill.ok { background: var(--good-wash); color: var(--good-ink); }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- top bar ---------- */
+.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--page) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.top-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; flex-wrap: wrap; }
+.brand { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+.brand .mark { width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: var(--page); display: grid; place-items: center; font-size: 12px; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.live.on .dot { background: var(--good); box-shadow: 0 0 0 3px var(--good-wash); }
+.live.off .dot { background: var(--critical); }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 3px 10px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.pill.demo { background: var(--good-wash); color: var(--good-ink); }
+.pill.warn { background: var(--warning-wash); color: var(--ink); }
 .pill.bad { background: var(--critical-wash); color: var(--critical-ink); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.chip { border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
-.chip[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); border-color: var(--axis); }
-.feed { max-height: 420px; overflow-y: auto; font-size: 13px; }
-.ev { display: grid; grid-template-columns: 70px 64px minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--grid); }
+.pill.stopped { background: var(--critical); color: #fff; }
+.spacer { flex: 1; }
+.stop-btn { background: var(--critical); color: #fff; border: 0; border-radius: 8px; padding: 7px 14px; font-weight: 650; }
+.stop-btn:disabled { opacity: 0.55; cursor: default; }
+.ticker { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 10px; scrollbar-width: none; }
+.ticker::-webkit-scrollbar { display: none; }
+.tick { flex: none; display: flex; align-items: baseline; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-variant-numeric: tabular-nums; transition: background-color 0.6s; }
+.tick b { font-size: 12px; color: var(--ink-2); font-weight: 650; }
+.tick span { font-weight: 600; }
+.tick small { color: var(--muted); font-size: 11px; }
+.tick.up { background: var(--good-wash); } .tick.down { background: var(--critical-wash); }
+.tabs { display: flex; gap: 2px; margin: 0; overflow-x: auto; }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px 9px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.tab .count { font-size: 11px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+
+/* ---------- layout ---------- */
+main { padding: 18px 0 8px; }
+[role="tabpanel"][hidden] { display: none; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
+.card + .card, .card + .grid, .grid + .card, .tiles + .card { margin-top: 14px; }
+.grid > .card { margin-top: 0; }
+.card-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+h2 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.005em; }
+.card-head .sub { margin-left: auto; }
+.sub { color: var(--muted); font-size: 12px; }
+.grid { display: grid; gap: 14px; }
+.charts { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; }
+@media (max-width: 1240px) { .two { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 980px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.scroll-x { overflow-x: auto; }
+.empty { color: var(--muted); padding: 10px 0; }
+.key { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 8px; }
+
+/* ---------- stat tiles ---------- */
+.tiles { display: grid; gap: 14px; grid-template-columns: 2fr repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .tile.hero { grid-column: 1 / -1; } }
+@media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
+.tile .label { color: var(--muted); font-size: 12px; font-weight: 600; }
+.tile .value { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .delta { font-size: 13px; margin-top: 2px; color: var(--ink-2); line-height: 1.35; overflow-wrap: anywhere; }
+.tile.hero .value { font-size: 44px; line-height: 1.05; margin-top: 6px; border-radius: 8px; transition: background-color 0.8s; display: inline-block; padding: 0 4px; margin-left: -4px; }
+.tile.hero .value.up { background: var(--good-wash); } .tile.hero .value.down { background: var(--critical-wash); }
+.pos { color: var(--good-ink); } .neg { color: var(--critical-ink); }
+
+/* ---------- tables ---------- */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+td { padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.grp td { background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 650; padding: 7px 10px; border-bottom: 0; }
+tr.grp td .sub { font-weight: 500; margin-left: 8px; }
+.board tbody tr:not(.grp):hover td { background: var(--surface-2); }
+.acct { font-weight: 650; white-space: nowrap; }
+.bal { font-size: 16px; font-weight: 650; border-radius: 6px; padding: 2px 6px; transition: background-color 0.8s; }
+.bal.up { background: var(--good-wash); } .bal.down { background: var(--critical-wash); }
+@media (prefers-reduced-motion: reduce) { .bal, .tick, .tile.hero .value { transition: none; } }
+@media (max-width: 820px) { .opt { display: none; } }
+.pos-inline { display: none; margin: 6px 0 0 20px; }
+.pos-inline.pnl { margin: 2px 6px 0 0; font-weight: 650; font-size: 13px; }
+@media (max-width: 640px) {
+  .poscol, .opt2 { display: none; }
+  .pos-inline { display: block; }
+  .top { position: static; }
+  .tab { padding: 10px 7px 9px; font-size: 14px; }
+}
+.badge { display: inline-block; font-size: 10.5px; font-weight: 700; border-radius: 5px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; background: var(--surface-3); color: var(--ink-2); letter-spacing: 0.01em; vertical-align: 1px; }
+.badge.fail { background: var(--critical-wash); color: var(--critical-ink); }
+.badge.pass { background: var(--good-wash); color: var(--good-ink); }
+.badge.tn { background: var(--warning-wash); color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-size: 12px; border-radius: 6px; padding: 2px 7px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip.long { background: var(--accent-wash); color: var(--ink); }
+.chip.short { background: var(--warning-wash); color: var(--ink); }
+.chip.flat { color: var(--muted); }
+
+/* ---------- charts ---------- */
+.chart-box { position: relative; height: 240px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 8px; font-size: 12px; }
+.legend button { background: none; border: 0; padding: 2px 0; color: var(--ink-2); }
+.legend button[aria-pressed="false"] { opacity: 0.4; }
+
+/* ---------- account cards ---------- */
+.cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+.grp-title { font-size: 12px; font-weight: 650; color: var(--ink-2); margin: 18px 2px 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+.grp-title:first-child { margin-top: 0; }
+.acard { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.acard .top-line { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.acard .stats { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.acard .stats b { color: var(--ink); font-weight: 650; }
+.acard ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.acard li + li { margin-top: 3px; }
+.status { display: inline-flex; gap: 6px; align-items: baseline; font-size: 12px; font-weight: 650; }
+.status.ok { color: var(--good-ink); } .status.bad { color: var(--critical-ink); }
+.acard .rule { font-size: 12px; color: var(--muted); }
+
+/* ---------- activity ---------- */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.filter { border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+.filter[aria-pressed="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.feed { max-height: 560px; overflow-y: auto; font-size: 13px; }
+.ev { display: grid; grid-template-columns: 64px 58px minmax(0, 1fr); gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--grid); }
 .ev time { color: var(--muted); font-variant-numeric: tabular-nums; }
-.ev .kind { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+.ev .kind { color: var(--muted); font-weight: 650; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; padding-top: 1px; }
 .ev.fill .kind, .ev.testnet .kind { color: var(--accent); }
 .ev.risk .kind, .ev.error .kind { color: var(--critical-ink); }
-.fills { max-height: 420px; overflow: auto; font-size: 13px; }
+.fills { max-height: 560px; overflow: auto; font-size: 13px; }
 .fills td { padding: 6px 8px; }
-footer { color: var(--muted); font-size: 12px; margin: 18px 0 8px; }
-.empty { color: var(--muted); padding: 8px 0; }
-dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); max-width: 440px; padding: 20px; }
-dialog::backdrop { background: rgba(0,0,0,0.4); }
+footer { color: var(--muted); font-size: 12px; padding: 18px 0 28px; }
+dialog { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--ink); max-width: 440px; padding: 22px; }
+dialog::backdrop { background: rgba(0,0,0,0.45); }
 .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.ghost { background: transparent; border: 1px solid var(--border); color: var(--ink); border-radius: 8px; padding: 8px 14px; }
+.ghost { background: transparent; border: 1px solid var(--border); color: var(--ink); border-radius: 8px; padding: 7px 14px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>crypto-bot · live demo</h1>
-    <span class="live" id="live"><span class="dot"></span><span id="live-text">connecting…</span></span>
-    <span class="spacer"></span>
-    <button class="stop-btn" id="stop-btn" type="button">STOP new buys</button>
-  </header>
-
-  <div class="banners" id="banners">
-    <div class="banner demo">DEMO: no real money</div>
+<div class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <div class="brand"><span class="mark">cb</span>crypto-bot</div>
+      <span class="live" id="live"><span class="dot"></span><span id="live-text">connecting…</span></span>
+      <div class="pills" id="banners"><span class="pill demo">DEMO: no real money</span></div>
+      <span class="spacer"></span>
+      <button class="stop-btn" id="stop-btn" type="button">STOP new buys</button>
+    </div>
+    <div class="ticker" id="ticker" aria-label="Live prices"></div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="t-overview" aria-controls="p-overview" aria-selected="true">Overview</button>
+      <button class="tab" role="tab" id="t-accounts" aria-controls="p-accounts" aria-selected="false">Accounts<span class="count" id="n-accounts"></span></button>
+      <button class="tab" role="tab" id="t-backtest" aria-controls="p-backtest" aria-selected="false">Backtest</button>
+      <button class="tab" role="tab" id="t-activity" aria-controls="p-activity" aria-selected="false">Activity</button>
+    </nav>
   </div>
+</div>
 
-  <section class="card" style="margin-bottom:14px">
-    <h2>Leaderboard · sorted by P&amp;L %, marked to market every second, after fees</h2>
-    <div class="scroll-x">
-      <table id="board">
-        <thead><tr>
-          <th>#</th><th>Account</th><th class="num">Balance</th><th class="num">P&amp;L $</th><th class="num">P&amp;L %</th>
-          <th class="num">Max DD</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Fees paid</th>
-        </tr></thead>
-        <tbody><tr><td colspan="9" class="empty">Waiting for live prices…</td></tr></tbody>
-      </table>
+<main class="wrap">
+  <!-- ================= Overview ================= -->
+  <section id="p-overview" role="tabpanel" aria-labelledby="t-overview">
+    <div class="tiles" id="tiles">
+      <div class="tile hero"><div class="label">All demo accounts together</div><div class="value">–</div><div class="delta">Waiting for live prices…</div></div>
+    </div>
+
+    <section class="card">
+      <div class="card-head"><h2>Leaderboard</h2><span class="sub">Sorted by P&amp;L % within each group · marked to market every second, after fees</span></div>
+      <div class="scroll-x">
+        <table class="board" id="board">
+          <thead><tr>
+            <th>#</th><th>Account</th><th class="poscol">Positions</th><th class="num">Balance</th><th class="num poscol">P&amp;L %</th><th class="num opt2">P&amp;L $</th>
+            <th class="num opt">Max DD</th><th class="num opt">Trades</th><th class="num opt">Win rate</th><th class="num opt">Fees</th>
+          </tr></thead>
+          <tbody><tr><td colspan="10" class="empty">Waiting for live prices…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="grid charts" id="charts">
+      <section class="card"><div class="card-head"><h2>BTC &amp; ETH</h2><span class="sub">P&amp;L since start, %</span></div>
+        <div class="legend" id="legend-0"></div>
+        <div class="chart-box"><canvas id="chart-0" role="img" aria-label="Profit or loss of the BTC and ETH accounts since their start, in percent; the leaderboard has the same numbers"></canvas></div></section>
+      <section class="card"><div class="card-head"><h2>More coins</h2><span class="sub">altcoins, memecoins, gold</span></div>
+        <div class="legend" id="legend-1"></div>
+        <div class="chart-box"><canvas id="chart-1" role="img" aria-label="Profit or loss of the altcoin, memecoin and gold accounts since their start, in percent; the leaderboard has the same numbers"></canvas></div></section>
+      <section class="card"><div class="card-head"><h2>Long/short</h2><span class="sub">simulated shorts</span></div>
+        <div class="legend" id="legend-2"></div>
+        <div class="chart-box"><canvas id="chart-2" role="img" aria-label="Profit or loss of the simulated long/short accounts since their start, in percent; the leaderboard has the same numbers"></canvas></div></section>
+    </div>
+    <p class="sub" id="chart-note" style="margin:10px 2px 0">Charts: one point per minute, the last one moves every second. Click a name in a legend to hide or show its line. Colours are per chart.</p>
+  </section>
+
+  <!-- ================= Accounts ================= -->
+  <section id="p-accounts" role="tabpanel" aria-labelledby="t-accounts" hidden>
+    <div id="cards"><div class="empty">Waiting for the first decision…</div></div>
+    <p class="sub" style="margin:14px 2px 0">A risk block stops new buys and new shorts. Closing a trade always goes through, because it cuts risk. Risk is checked every minute and again before every order.</p>
+  </section>
+
+  <!-- ================= Backtest ================= -->
+  <section id="p-backtest" role="tabpanel" aria-labelledby="t-backtest" hidden>
+    <section class="card">
+      <div class="card-head"><h2>What history says: a typical day, week and year</h2></div>
+      <div class="scroll-x" id="expect"><div class="empty">Waiting for the backtest…</div></div>
+      <p class="sub" style="margin:10px 0 0">Not a promise or a forecast. These are ranges from the 2023–2026 backtest at each account's own fee and size: the typical (median) result and the range 8 out of 10 periods fell in. 2023–2026 was mostly a rising market for crypto; a falling one would look worse. The year figures rest on only about three separate years. Real results can land outside these ranges.</p>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Backtest before demo</h2><span class="sub">in-sample 2018–22 vs out-of-sample 2023+</span></div>
+      <div class="scroll-x" id="backtest"><div class="empty">Loading…</div></div>
+      <p class="sub" id="backtest-note" style="margin:10px 0 0">Same decision code as the live engine, run on Binance hourly candles. A strategy that loses money out of sample at either fee is flagged FAILED BACKTEST; it still runs in demo. Parameters were never tuned to pass. Past results do not predict future ones.</p>
+    </section>
+  </section>
+
+  <!-- ================= Activity ================= -->
+  <section id="p-activity" role="tabpanel" aria-labelledby="t-activity" hidden>
+    <div class="grid two">
+      <section class="card">
+        <div class="card-head"><h2>Activity</h2><span class="sub">UTC</span></div>
+        <div class="filters" id="filters"></div>
+        <div class="feed" id="feed"></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Orders &amp; fills</h2></div>
+        <div class="fills">
+          <table id="fills">
+            <thead><tr>
+              <th>Time (UTC)</th><th>Account</th><th>Order</th><th class="num">Qty @ price</th>
+              <th class="num">Value / fee</th><th class="num" title="slippage against the mid price; for testnet fills, real vs what the simulator predicted">Slip vs mid</th><th>Status</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="sub" style="margin:10px 0 0">Demo fills walk the live Binance order book and pay the account's taker fee. Slippage is in basis points (1 bp = 0.01%) against the mid price; positive means it cost money. For testnet fills, the line under the slippage shows what the simulator predicted from the same testnet order book, so real and simulated fills can be compared.</p>
+      </section>
     </div>
   </section>
 
-  <div class="grid g-2">
-    <section class="card">
-      <h2>P&amp;L since start, % (accounts start with $15 or $20)</h2>
-      <div class="chart-grp"><h3>BTC &amp; ETH</h3><div class="legend" id="legend-0"></div>
-        <div class="chart-box"><canvas id="chart-0" role="img" aria-label="Profit or loss of the BTC and ETH accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
-      <div class="chart-grp"><h3>More coins: altcoins, memecoins, gold</h3><div class="legend" id="legend-1"></div>
-        <div class="chart-box"><canvas id="chart-1" role="img" aria-label="Profit or loss of the altcoin, memecoin and gold accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
-      <div class="chart-grp"><h3>Long/short (simulated)</h3><div class="legend" id="legend-2"></div>
-        <div class="chart-box"><canvas id="chart-2" role="img" aria-label="Profit or loss of the simulated long/short accounts since their start, in percent; the leaderboard above has the same numbers"></canvas></div></div>
-      <div class="sub" id="chart-note">One point per minute; the last point moves every second. Colours are per chart.</div>
-    </section>
-    <section class="card">
-      <h2>Live prices</h2>
-      <div class="prices" id="prices"></div>
-      <div class="sub" id="feed-status" style="margin-top:10px"></div>
-    </section>
-  </div>
-
-  <section class="card" style="margin-bottom:14px">
-    <h2>Backtest before demo · in-sample 2018-22 vs out-of-sample 2023+</h2>
-    <div class="scroll-x" id="backtest"><div class="empty">Loading…</div></div>
-    <div class="sub" id="backtest-note" style="margin-top:8px">Same decision code as the live engine, run on Binance hourly candles. A strategy that loses money out of sample at either fee is flagged FAILED BACKTEST; it still runs in demo. Parameters were never tuned to pass. Past results do not predict future ones.</div>
-  </section>
-
-  <section class="card" style="margin-bottom:14px">
-    <h2>What history says: a typical day, week and year</h2>
-    <div class="scroll-x" id="expect"><div class="empty">Waiting for the backtest…</div></div>
-    <div class="sub" style="margin-top:8px">Not a promise or a forecast. These are ranges from the 2023–2026 backtest, at each account's own fee and size: the typical (median) result, and the range 8 out of 10 periods fell in. 2023–2026 was mostly a rising market for crypto; a falling one would look worse. The year figures rest on only about three separate years of data. Real results can land outside these ranges.</div>
-  </section>
-
-  <div class="grid g-half">
-    <section class="card">
-      <h2>What each strategy is doing</h2>
-      <div id="states"><div class="empty">Waiting for the first decision…</div></div>
-    </section>
-    <section class="card">
-      <h2>Risk per account</h2>
-      <div id="risk"></div>
-      <div class="sub" style="margin-top:8px">A block stops new buys. Sells that reduce risk still go through. Checked every minute and before every buy.</div>
-    </section>
-  </div>
-
-  <div class="grid g-half">
-    <section class="card">
-      <h2>Activity</h2>
-      <div class="chips" id="chips"></div>
-      <div class="feed" id="feed"></div>
-    </section>
-    <section class="card">
-      <h2>Orders &amp; fills</h2>
-      <div class="fills">
-        <table id="fills">
-          <thead><tr>
-            <th>Time (UTC)</th><th>Venue</th><th>Account</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th>
-            <th class="num">Value</th><th class="num">Fee</th><th class="num">Slip vs mid</th><th class="num">Real vs sim slip</th><th>Status</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="sub" style="margin-top:8px">Demo fills walk the live Binance order book and pay the 0.1% taker fee. Slippage is in basis points (1 bp = 0.01%) vs the mid price; positive means it cost money. For testnet fills, "real vs sim" compares the actual fill with what the simulator predicted from the same testnet book.</div>
-    </section>
-  </div>
-
-  <footer>Balances and P&amp;L are realized and marked-to-market numbers after fees: holdings are valued at the live mid price and every fee paid is already deducted. The only forward-looking numbers are the "what history says" ranges, taken from the backtest and labelled as such. Past results do not predict future ones.</footer>
-</div>
+  <footer>Balances and P&amp;L are realized and marked-to-market numbers after fees: holdings are valued at the live mid price and every fee paid is already deducted. The only forward-looking numbers are the "what history says" ranges, taken from the backtest and labelled as such. Shorts in the long/short accounts are simulated. Past results do not predict future ones.</footer>
+</main>
 
 <dialog id="stop-dlg">
-  <strong>Stop all new buys?</strong>
-  <p>Every account stops buying within a minute. Sells that reduce risk still go through. This creates a file named <code>STOP</code> in the bot folder; delete it to resume.</p>
+  <strong>Stop all new trades?</strong>
+  <p>Every account stops opening new trades within a minute. Closing trades, which cuts risk, still goes through. This creates a file named <code>STOP</code> in the bot folder; delete it to resume.</p>
   <div class="dlg-actions">
     <button class="ghost" id="stop-cancel" type="button">Cancel</button>
-    <button class="stop-btn" id="stop-yes" type="button">Stop new buys</button>
+    <button class="stop-btn" id="stop-yes" type="button">Stop new trades</button>
   </div>
 </dialog>
 
 <script>
 "use strict";
-const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
-               D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
-const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const GROUPS = ["BTC & ETH", "More coins", "Long/short (simulated)"];
-const GROUP_TITLE = { "BTC & ETH": "BTC & ETH", "More coins": "More coins: altcoins, memecoins, gold",
-  "Long/short (simulated)": "Long/short (simulated): the bot picks long or short itself; shorts are simulated at 1x with a 10%/yr borrow cost, not possible on a normal spot account" };
-const groupOf = {};  // account -> group, filled from the stream and the history
-function noteGroups(pairs) {
-  for (const [acct, grp] of pairs) {
-    groupOf[acct] = grp || "BTC & ETH";
-    if (SLOT[acct]) continue;
-    const used = new Set(Object.entries(SLOT).filter(([a]) => (groupOf[a] || "BTC & ETH") === groupOf[acct]).map(([, v]) => v));
-    const free = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `--s${i}`).find((v) => !used.has(v));
-    SLOT[acct] = free || "--muted";  // past 8 series a chart folds to grey instead of inventing a colour
-  }
-}
-const colorOf = (acct) => css(SLOT[acct] || "--muted");
-const chartIndex = (acct) => Math.max(0, GROUPS.indexOf(groupOf[acct] || "BTC & ETH"));
+// ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
-
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 function el(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else e.setAttribute(k, v);
   }
-  for (const k of kids) if (k !== null && k !== undefined) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  for (const k of kids) if (k !== null && k !== undefined && k !== false) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return e;
 }
-const fmtUsd = (x, d = 2) => x == null ? "–" : (x < 0 ? "-$" : "$") + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const noNegZero = (x, d) => Math.abs(x) < 0.5 * 10 ** -d ? 0 : x;  // never show "-0.00"
+const fmtUsd = (x, d = 2) => x == null ? "–" : (noNegZero(x, d) < 0 ? "-$" : "$") + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtSigned = (x, d = 4) => { if (x == null) return "–"; x = noNegZero(x, d); return (x >= 0 ? "+" : "-") + "$" + Math.abs(x).toFixed(d); };
 const fmtPct = (x, d = 2, sign = false) => { if (x == null) return "–"; x = noNegZero(x * 100, d); return (sign && x >= 0 ? "+" : "") + x.toFixed(d) + "%"; };
 const fmtPx = (x) => {
@@ -262,124 +314,193 @@ const fmtPx = (x) => {
 };
 const fmtQty = (q) => q == null ? "–" : q >= 1000 ? Math.round(q).toLocaleString("en-US")
   : q >= 1 ? String(+q.toPrecision(8)) : q.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
-const utc = (ms, secs = true) => { const d = new Date(ms); return d.toISOString().slice(11, secs ? 19 : 16); };
+const utc = (ms, secs = true) => new Date(ms).toISOString().slice(11, secs ? 19 : 16);
 const utcDay = (ms) => new Date(ms).toISOString().slice(5, 10);
-const sgnClass = (x) => x > 0 ? "pos" : x < 0 ? "neg" : "";
+const sgnClass = (x) => x > 0.0000005 ? "pos" : x < -0.0000005 ? "neg" : "";
+const flash = (node, now, before) => {
+  if (before === undefined || Math.abs(now - before) < 1e-12) return;
+  node.classList.add(now > before ? "up" : "down");
+  requestAnimationFrame(() => setTimeout(() => node.classList.remove("up", "down"), 60));
+};
 
-// ---------- leaderboard ----------
-const prevBal = {};
-function renderBoard(allRows) {
-  const tb = $("board").tBodies[0];
-  if (!allRows.length) return;
-  noteGroups(allRows.map((r) => [r.account, r.group]));
-  const out = [];
-  for (const grp of GROUPS.concat([...new Set(allRows.map((r) => r.group))].filter((g) => !GROUPS.includes(g)))) {
-    const rows = allRows.filter((r) => (r.group || "BTC & ETH") === grp);
-    if (!rows.length) continue;
-    out.push(el("tr", { class: "grp" }, el("td", { colspan: 9 }, GROUP_TITLE[grp] || grp)));
-    out.push(...rows.map((r, i) => boardRow(r, i)));
+// ---------- groups and colours (fixed per account within its group; at most 8 per chart) ----------
+const GROUPS = ["BTC & ETH", "More coins", "Long/short (simulated)"];
+const GROUP_NOTE = { "More coins": "altcoins, memecoins, gold · $20 each",
+  "Long/short (simulated)": "picks long or short itself · shorts simulated at 1x with a 10%/yr borrow cost" };
+const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
+               D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
+const groupOf = {};
+function noteGroups(pairs) {
+  for (const [acct, grp] of pairs) {
+    groupOf[acct] = grp || "BTC & ETH";
+    if (SLOT[acct]) continue;
+    const used = new Set(Object.entries(SLOT).filter(([a]) => (groupOf[a] || "BTC & ETH") === groupOf[acct]).map(([, v]) => v));
+    SLOT[acct] = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `--s${i}`).find((v) => !used.has(v)) || "--muted";
   }
-  tb.replaceChildren(...out);
 }
-function boardRow(r, i) {
-  const bal = el("span", { class: "bal" }, fmtUsd(r.balance, 4));
-  const p = prevBal[r.account];
-  if (p !== undefined && Math.abs(r.balance - p) > 1e-9) {
-    bal.classList.add(r.balance > p ? "up" : "down");
-    requestAnimationFrame(() => setTimeout(() => bal.classList.remove("up", "down"), 60));
-  }
-  prevBal[r.account] = r.balance;
-  const badges = [];
-  if (r.backtest === "FAILED BACKTEST") badges.push(el("span", { class: "badge fail", title: r.backtest_why }, "FAILED BACKTEST"));
-  else if (r.backtest === "PASSED") badges.push(el("span", { class: "badge pass", title: r.backtest_why }, "backtest passed"));
-  else if (r.backtest === "NOT BACKTESTED") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not backtested"));
-  else if (r.backtest === "BENCHMARK") badges.push(el("span", { class: "badge", title: r.backtest_why }, "benchmark"));
-  else if (r.backtest === "NOT ENOUGH DATA") badges.push(el("span", { class: "badge", title: r.backtest_why }, "not enough data"));
-  if (r.allows_short) badges.push(el("span", { class: "badge tn", title: "shorts are simulated at 1x; a normal spot account cannot short" }, "SIMULATED SHORTS"));
-  if (r.testnet) badges.push(el("span", { class: "badge tn", title: "this strategy's orders are also sent to Binance Spot Testnet" }, "TESTNET"));
-  const hold = r.holdings_usd || {};
-  const coins = (r.coins || Object.keys(hold)).map((c) => hold[c] < -0.005 ? `${c} SHORT ${fmtUsd(-hold[c])}`
-    : `${c} ${fmtUsd(hold[c])}`).join(" · ");
-  const acct = el("td", {},
-    el("span", { class: "key", style: `background:${colorOf(r.account)}` }),
-    el("span", { class: "acct" }, r.label), ...badges,
-    el("div", { class: "sub", style: "margin-left:22px" },
-      `${r.timeframe ? r.timeframe + " · " : ""}started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)} · cash ${fmtUsd(r.cash)} · ${coins}`),
-    r.note ? el("div", { class: "sub", style: "margin-left:22px" }, r.note) : null);
-  acct.title = r.rule || "";
-  return el("tr", {},
-    el("td", { class: "num" }, i + 1), acct,
-    el("td", { class: "num" }, bal),
-    el("td", { class: "num " + sgnClass(r.pnl_usd) }, fmtSigned(r.pnl_usd)),
-    el("td", { class: "num " + sgnClass(r.pnl_pct) }, fmtPct(r.pnl_pct, 2, true)),
-    el("td", { class: "num" }, fmtPct(r.max_dd, 2)),
-    el("td", { class: "num" }, r.trades),
-    el("td", { class: "num" }, r.win_rate == null ? "–" : fmtPct(r.win_rate, 0)),
-    el("td", { class: "num" }, fmtUsd(r.fees, 4)));
-}
+const colorOf = (acct) => css(SLOT[acct] || "--muted");
+const chartIndex = (acct) => Math.max(0, GROUPS.indexOf(groupOf[acct] || "BTC & ETH"));
+const keyFor = (acct) => el("span", { class: "key", style: `background:${colorOf(acct)}` });
 
-// ---------- banners ----------
+// ---------- tabs ----------
+const TABS = { overview: "t-overview", accounts: "t-accounts", backtest: "t-backtest", activity: "t-activity" };
+function showTab(name) {
+  if (!TABS[name]) name = "overview";
+  for (const [n, id] of Object.entries(TABS)) {
+    const on = n === name;
+    $(id).setAttribute("aria-selected", String(on));
+    $($(id).getAttribute("aria-controls")).hidden = !on;
+  }
+  if (location.hash.slice(1) !== name) history.replaceState(null, "", "#" + name);
+  if (name === "accounts" && lastSnap) renderCards(lastSnap.leaderboard, lastSnap.states, lastSnap.risk);
+}
+for (const [n, id] of Object.entries(TABS)) $(id).onclick = () => showTab(n);
+addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+
+// ---------- banners & ticker ----------
 function renderBanners(s) {
-  const b = [el("div", { class: "banner demo" }, s.banner.demo)];
-  if (s.banner.market_label) b.push(el("div", { class: "banner bad" }, s.banner.market_label));
+  const b = [el("span", { class: "pill demo" }, s.banner.demo)];
+  if (s.banner.market_label) b.push(el("span", { class: "pill bad" }, s.banner.market_label));
   if (s.banner.testnet) {
     const st = s.banner.testnet_status;
-    b.push(el("div", { class: "banner " + (st === "ok" ? "warn" : st === "unknown" ? "" : "bad") }, s.banner.testnet));
+    b.push(el("span", { class: "pill " + (st === "ok" ? "warn" : st === "unknown" ? "" : "bad") }, s.banner.testnet));
   }
-  if (s.stopped) b.push(el("div", { class: "banner stopped" }, "STOPPED: no new buys (delete the STOP file to resume)"));
+  if (s.stopped) b.push(el("span", { class: "pill stopped" }, "STOPPED: no new trades (delete the STOP file to resume)"));
   $("banners").replaceChildren(...b);
   $("stop-btn").disabled = !!s.stopped;
   $("stop-btn").textContent = s.stopped ? "Stopped" : "STOP new buys";
 }
-
-// ---------- prices ----------
-function renderPrices(m) {
-  const lab = m.label ? " (FAKE)" : "";
+const lastPx = {};
+function renderTicker(m) {
   const coins = m.coins || ["BTC", "ETH"];
-  const big = coins.slice(0, 2).map((a) => {
+  $("ticker").replaceChildren(...coins.map((a) => {
     const q = m[a] || {};
-    return el("div", {},
-      el("div", { class: "px-name" }, `${a}/USDT${lab}`),
-      el("div", { class: "px-val" }, fmtPx(q.price)),
-      el("div", { class: "px-meta" }, `bid ${fmtPx(q.bid)} · ask ${fmtPx(q.ask)} · spread ${q.spread_bps == null ? "–" : q.spread_bps.toFixed(2) + " bp"}`),
-      el("div", { class: "px-meta" }, `${q.source || "no data"} · ${q.age_s == null ? "–" : q.age_s.toFixed(1) + " s ago"}`));
-  });
-  const rest = coins.slice(2);
-  const table = rest.length ? el("table", { class: "px-table" },
-    el("thead", {}, el("tr", {}, el("th", {}, "Coin"), el("th", { class: "num" }, "Price" + lab), el("th", { class: "num" }, "Spread"), el("th", { class: "num" }, "Age"))),
-    el("tbody", {}, ...rest.map((a) => {
-      const q = m[a] || {};
-      return el("tr", {}, el("td", { class: "coin" }, a), el("td", { class: "num" }, fmtPx(q.price)),
-        el("td", { class: "num" }, q.spread_bps == null ? "–" : q.spread_bps.toFixed(1) + " bp"),
-        el("td", { class: "num" }, q.age_s == null ? "–" : q.age_s.toFixed(0) + " s"));
-    }))) : null;
-  $("prices").replaceChildren(...big, ...(table ? [table] : []));
-  $("feed-status").textContent = `Price feed: ${m.status}. Binance public data (data-api.binance.vision), mid = (bid + ask) / 2.`;
+    const node = el("div", { class: "tick", title: `${a}/USDT · bid ${fmtPx(q.bid)} · ask ${fmtPx(q.ask)} · ${q.source || "no data"}` },
+      el("b", {}, a), el("span", {}, fmtPx(q.price)),
+      el("small", {}, q.spread_bps == null ? "" : q.spread_bps.toFixed(1) + " bp"));
+    if (q.price != null) { flash(node, q.price, lastPx[a]); lastPx[a] = q.price; }
+    return node;
+  }), el("div", { class: "tick" }, el("small", {}, `feed: ${m.status}${m.label ? " · FAKE PRICES" : ""}`)));
 }
 
-// ---------- states & risk ----------
-function renderStates(states) {
-  if (!states.length) return;
-  $("states").replaceChildren(...states.map((s) => el("div", { class: "state" },
-    el("div", {}, el("span", { class: "key", style: `background:${colorOf(s.account)}` }), el("strong", {}, s.label),
-      s.next_text ? el("span", { class: "sub" }, " · " + s.next_text) : null),
-    el("ul", {}, ...s.lines.map((l) => el("li", {}, l))))));
+// ---------- overview tiles ----------
+let lastTotal;
+function renderTiles(rows, risk) {
+  if (!rows.length) return;
+  const total = rows.reduce((t, r) => t + r.balance, 0), start = rows.reduce((t, r) => t + r.start_cash, 0);
+  const pnl = total - start;
+  const sorted = [...rows].sort((a, b) => b.pnl_pct - a.pnl_pct);
+  const best = sorted[0], worst = sorted[sorted.length - 1];
+  let longs = 0, shorts = 0;
+  for (const r of rows) for (const v of Object.values(r.holdings_usd || {})) { if (v > 0.5) longs++; else if (v < -0.5) shorts++; }
+  const fees = rows.reduce((t, r) => t + r.fees, 0);
+  const blocked = (risk || []).filter((r) => !r.ok);
+  const hero = el("div", { class: "value" }, fmtUsd(total, 4));
+  flash(hero, total, lastTotal); lastTotal = total;
+  const tile = (label, value, delta, cls = "") => el("div", { class: "tile" }, el("div", { class: "label" }, label),
+    el("div", { class: "value " + cls }, value), el("div", { class: "delta" }, delta));
+  $("tiles").replaceChildren(
+    el("div", { class: "tile hero" }, el("div", { class: "label" }, `All ${rows.length} demo accounts together`), hero,
+      el("div", { class: "delta" }, el("span", { class: sgnClass(pnl) }, `${fmtSigned(pnl, 4)} (${fmtPct(pnl / start, 3, true)})`),
+        ` since the start, from ${fmtUsd(start)} of demo money`)),
+    tile("Best account", fmtPct(best.pnl_pct, 2, true), best.label, sgnClass(best.pnl_pct)),
+    tile("Worst account", fmtPct(worst.pnl_pct, 2, true), worst.label, sgnClass(worst.pnl_pct)),
+    tile("Open trades", `${longs + shorts}`, `${longs} long · ${shorts} short (simulated)`),
+    tile("Fees paid", fmtUsd(fees, 4), "all accounts, incl. borrow cost"),
+    tile("Risk", blocked.length ? `✕ ${blocked.length} blocked` : "✓ all OK", blocked.length ? blocked.map((r) => r.label).join(", ") : "new trades allowed everywhere",
+      blocked.length ? "neg" : "pos"));
 }
-function renderRisk(rows) {
-  $("risk").replaceChildren(...rows.map((r) => el("div", { class: "risk-row" },
-    el("span", { class: "pill " + (r.ok ? "ok" : "bad") }, r.ok ? "✓ OK" : "✕ BLOCKED"),
-    el("div", {}, el("strong", {}, r.label),
-      el("div", { class: "sub" }, r.ok ? "buys allowed" + (r.checked_ms ? ` · checked ${utc(r.checked_ms, false)} UTC` : "")
-        : r.reasons.join("; "))))));
+
+// ---------- leaderboard ----------
+const prevBal = {};
+function verdictBadge(r) {
+  if (r.backtest === "FAILED BACKTEST") return el("span", { class: "badge fail", title: r.backtest_why }, "✕ failed backtest");
+  if (r.backtest === "PASSED") return el("span", { class: "badge pass", title: r.backtest_why }, "✓ backtest");
+  if (r.backtest === "BENCHMARK") return el("span", { class: "badge", title: r.backtest_why }, "benchmark");
+  if (r.backtest) return el("span", { class: "badge", title: r.backtest_why }, r.backtest.toLowerCase());
+  return null;
+}
+function positionChips(r) {
+  const hold = r.holdings_usd || {};
+  return el("div", { class: "chips" }, ...(r.coins || Object.keys(hold)).map((c) => {
+    const v = hold[c] || 0;
+    if (v > 0.005) return el("span", { class: "chip long", title: `long ${c}` }, `▲ ${c} ${fmtUsd(v)}`);
+    if (v < -0.005) return el("span", { class: "chip short", title: `short ${c} (simulated)` }, `▼ ${c} ${fmtUsd(-v)}`);
+    return el("span", { class: "chip flat", title: `no ${c} position` }, `${c} –`);
+  }), el("span", { class: "chip flat", title: "cash" }, `cash ${fmtUsd(r.cash)}`));
+}
+function boardRow(r, i) {
+  const bal = el("span", { class: "bal" }, fmtUsd(r.balance, 4));
+  flash(bal, r.balance, prevBal[r.account]); prevBal[r.account] = r.balance;
+  const name = el("td", { title: [r.rule, r.note].filter(Boolean).join(" — ") }, keyFor(r.account), el("span", { class: "acct" }, r.label),
+    verdictBadge(r),
+    r.testnet ? el("span", { class: "badge tn", title: "orders are also sent to Binance Spot Testnet" }, "testnet") : null,
+    el("div", { class: "sub", style: "margin-left:20px" }, `${r.timeframe || "hold"}${r.allows_short ? " · long/short (simulated)" : ""} · started ${fmtUsd(r.start_cash)} · fee ${fmtPct(r.fee_rate, 1)}`),
+    el("div", { class: "pos-inline" }, positionChips(r)));
+  return el("tr", {},
+    el("td", { class: "num sub" }, i + 1), name, el("td", { class: "poscol" }, positionChips(r)),
+    el("td", { class: "num" }, bal, el("div", { class: "pos-inline pnl " + sgnClass(r.pnl_pct) }, fmtPct(r.pnl_pct, 2, true))),
+    el("td", { class: "num poscol " + sgnClass(r.pnl_pct), style: "font-weight:650" }, fmtPct(r.pnl_pct, 2, true)),
+    el("td", { class: "num opt2 " + sgnClass(r.pnl_usd) }, fmtSigned(r.pnl_usd)),
+    el("td", { class: "num opt" }, fmtPct(r.max_dd, 2)),
+    el("td", { class: "num opt" }, r.trades),
+    el("td", { class: "num opt" }, r.win_rate == null ? "–" : fmtPct(r.win_rate, 0)),
+    el("td", { class: "num opt" }, fmtUsd(r.fees, 4)));
+}
+function orderedGroups(rows) {
+  return GROUPS.concat([...new Set(rows.map((r) => r.group))].filter((g) => g && !GROUPS.includes(g)));
+}
+function renderBoard(allRows) {
+  if (!allRows.length) return;
+  noteGroups(allRows.map((r) => [r.account, r.group]));
+  const out = [];
+  for (const grp of orderedGroups(allRows)) {
+    const rows = allRows.filter((r) => (r.group || "BTC & ETH") === grp);
+    if (!rows.length) continue;
+    const bal = rows.reduce((t, r) => t + r.balance, 0), start = rows.reduce((t, r) => t + r.start_cash, 0);
+    out.push(el("tr", { class: "grp" }, el("td", { colspan: 10 }, grp,
+      el("span", { class: "sub" }, `${rows.length} accounts · ${fmtUsd(bal, 2)} (${fmtPct(bal / start - 1, 2, true)})${GROUP_NOTE[grp] ? " · " + GROUP_NOTE[grp] : ""}`))));
+    out.push(...rows.map((r, i) => boardRow(r, i)));
+  }
+  $("board").tBodies[0].replaceChildren(...out);
+  $("n-accounts").textContent = allRows.length;
+}
+
+// ---------- accounts tab (what each account is doing + its risk) ----------
+function renderCards(rows, states, risk) {
+  if (!rows || !rows.length) return;
+  const st = Object.fromEntries((states || []).map((s) => [s.account, s]));
+  const rk = Object.fromEntries((risk || []).map((r) => [r.account, r]));
+  const out = [];
+  for (const grp of orderedGroups(rows)) {
+    const inGrp = rows.filter((r) => (r.group || "BTC & ETH") === grp);
+    if (!inGrp.length) continue;
+    out.push(el("div", { class: "grp-title" }, grp));
+    out.push(el("div", { class: "cards" }, ...inGrp.map((r) => {
+      const s = st[r.account] || { lines: [] }, k = rk[r.account] || { ok: true, reasons: [] };
+      return el("div", { class: "acard" },
+        el("div", { class: "top-line" }, keyFor(r.account), el("span", { class: "acct" }, r.label), verdictBadge(r),
+          r.allows_short ? el("span", { class: "badge tn" }, "simulated shorts") : null),
+        el("div", { class: "stats" }, el("span", {}, "balance ", el("b", {}, fmtUsd(r.balance, 4))),
+          el("span", { class: sgnClass(r.pnl_pct) }, fmtPct(r.pnl_pct, 2, true)),
+          el("span", {}, `${r.trades} trades`), el("span", {}, s.next_text || "")),
+        positionChips(r),
+        s.lines.length ? el("ul", {}, ...s.lines.map((l) => el("li", {}, l))) : null,
+        el("div", { class: "status " + (k.ok ? "ok" : "bad") }, k.ok ? "✓ risk OK" : "✕ BLOCKED",
+          el("span", { class: "sub" }, k.ok ? "new trades allowed" : k.reasons.join("; "))),
+        el("div", { class: "rule" }, [r.rule, r.note].filter(Boolean).join(" — ")));
+    })));
+  }
+  $("cards").replaceChildren(...out);
 }
 
 // ---------- activity feed ----------
 const KINDS = ["check", "signal", "order", "fill", "risk", "testnet", "account", "error"];
 const shown = new Set(KINDS.filter((k) => k !== "check"));
 const events = new Map();
-function initChips() {
-  $("chips").replaceChildren(...KINDS.map((k) => {
-    const c = el("button", { class: "chip", type: "button", "aria-pressed": String(shown.has(k)) }, k === "check" ? "minute checks" : k);
+function initFilters() {
+  $("filters").replaceChildren(...KINDS.map((k) => {
+    const c = el("button", { class: "filter", type: "button", "aria-pressed": String(shown.has(k)) }, k === "check" ? "minute checks" : k);
     c.onclick = () => { shown.has(k) ? shown.delete(k) : shown.add(k); c.setAttribute("aria-pressed", String(shown.has(k))); renderFeed(); };
     return c;
   }));
@@ -396,31 +517,29 @@ function renderFeed(newEvents) {
 // ---------- fills ----------
 function renderFills(fills) {
   const tb = $("fills").tBodies[0];
-  if (!fills.length) { tb.replaceChildren(el("tr", {}, el("td", { colspan: 11, class: "empty" }, "No orders yet."))); return; }
+  if (!fills.length) { tb.replaceChildren(el("tr", {}, el("td", { colspan: 7, class: "empty" }, "No orders yet."))); return; }
   tb.replaceChildren(...fills.map((f) => {
     const tn = f.venue === "testnet";
     const bp = (x) => x == null ? "–" : x.toFixed(1) + " bp";
+    const leg = (f.reason || "").match(/^(open long|open short|close long|close short):/);
     return el("tr", {},
-      el("td", { class: "num" }, `${utcDay(f.ts)} ${utc(f.ts)}`),
-      el("td", {}, el("span", { class: "badge " + (tn ? "tn" : ""), style: "margin-left:0" }, tn ? "TESTNET" : "DEMO")),
-      el("td", {}, f.account),
-      el("td", { style: "white-space:nowrap" }, `${f.side} ${f.asset}`),
-      el("td", { class: "num" }, fmtQty(f.qty)),
-      el("td", { class: "num" }, f.price == null ? "–" : fmtPx(f.price) + (tn ? " TESTNET" : "")),
-      el("td", { class: "num" }, f.notional == null ? "–" : fmtUsd(f.notional)),
-      el("td", { class: "num" }, f.fee == null ? "–" : fmtUsd(f.fee, 4)),
-      el("td", { class: "num" }, bp(f.slippage_bps)),
-      el("td", { class: "num" }, tn && f.slippage_bps != null ? `${bp(f.slippage_bps)} vs ${bp(f.sim_slippage_bps)}` : "–"),
+      el("td", { class: "num", style: "text-align:left" }, utc(f.ts), el("div", { class: "sub" }, utcDay(f.ts))),
+      el("td", {}, f.account, el("div", {}, el("span", { class: "badge " + (tn ? "tn" : ""), style: "margin-left:0" }, tn ? "TESTNET" : "DEMO"))),
+      el("td", { style: "white-space:nowrap" }, `${f.side} ${f.asset}`, leg ? el("div", { class: "sub" }, leg[1]) : null),
+      el("td", { class: "num" }, fmtQty(f.qty), el("div", { class: "sub" }, f.price == null ? "–" : "@ " + fmtPx(f.price) + (tn ? " TESTNET" : ""))),
+      el("td", { class: "num" }, f.notional == null ? "–" : fmtUsd(f.notional), el("div", { class: "sub" }, f.fee == null ? "" : "fee " + fmtUsd(f.fee, 4))),
+      el("td", { class: "num" }, bp(f.slippage_bps), tn && f.slippage_bps != null ? el("div", { class: "sub" }, `sim predicted ${bp(f.sim_slippage_bps)}`) : null),
       el("td", { title: f.reason || "" }, f.status + (f.status !== "filled" && f.reason ? `: ${f.reason}` : "")));
   }));
 }
 
 // ---------- P&L charts (one per group, at most 8 colours each) ----------
-let charts = [null, null, null], history = null, labels = {}, starts = {};
+let charts = [null, null, null], equityHist = null, labels = {}, starts = {};
+const hiddenLines = new Set();
 const toPoint = (acct, x, bal) => ({ x, y: (bal / (starts[acct] || 15) - 1) * 100, bal });
 function datasetFor(acct, pts) {
   const c = colorOf(acct);
-  return { label: labels[acct] || acct, account: acct, data: pts, borderColor: c, backgroundColor: c,
+  return { label: labels[acct] || acct, account: acct, data: pts, borderColor: c, backgroundColor: c, hidden: hiddenLines.has(acct),
            borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBorderWidth: 2,
            pointHoverBorderColor: css("--surface"), tension: 0, borderJoinStyle: "round", borderCapStyle: "round" };
 }
@@ -433,7 +552,7 @@ const crosshair = { id: "crosshair", afterDraw(c) {
 } };
 function makeChart(canvas) {
   const grid = css("--grid");
-  const ch = new Chart(canvas, {
+  return new Chart(canvas, {
     type: "line", data: { datasets: [] }, plugins: [crosshair],
     options: {
       animation: false, parsing: false, normalized: true, maintainAspectRatio: false,
@@ -451,11 +570,11 @@ function makeChart(canvas) {
       },
       scales: {
         x: { type: "linear", grid: { color: grid }, border: { color: css("--axis") },
-             ticks: { maxTicksLimit: 8, callback: function (v) {
+             ticks: { maxTicksLimit: 6, callback: function (v) {
                const span = this.max - this.min;  // `this` is the x scale (works during the first draw too)
                return span > 2 * 86400000 ? utcDay(v) : span < 15 * 60000 ? utc(v) : utc(v, false);
              } } },
-        y: { grid: { color: grid }, border: { display: false }, ticks: { callback: (v, i, t) => {
+        y: { grid: { color: grid }, border: { display: false }, ticks: { maxTicksLimit: 6, callback: (v, i, t) => {
                // enough decimals that neighbouring ticks never print the same number
                const step = t.length > 1 ? Math.abs(t[1].value - t[0].value) : 1;
                const d = Math.min(6, Math.max(2, Math.ceil(-Math.log10(step || 1))));
@@ -464,10 +583,9 @@ function makeChart(canvas) {
       },
     },
   });
-  return ch;
 }
 function buildChart() {
-  if (!window.Chart) { $("chart-note").textContent = "Chart.js could not load from the CDN. Every number above is still live."; return; }
+  if (!window.Chart) { $("chart-note").textContent = "Chart.js could not load from the CDN. Every number in the leaderboard is still live."; return; }
   Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
   Chart.defaults.color = css("--muted");
   charts = [0, 1, 2].map((i) => makeChart($("chart-" + i)));
@@ -475,21 +593,29 @@ function buildChart() {
 function renderLegend() {
   [0, 1, 2].forEach((i) => {
     const accts = Object.keys(labels).filter((a) => chartIndex(a) === i);
-    $("legend-" + i).replaceChildren(...accts.map((a) => el("span", {},
-      el("span", { class: "key", style: `background:${colorOf(a)}` }), labels[a])));
-    $("legend-" + i).parentElement.style.display = accts.length ? "" : "none";
+    $("legend-" + i).replaceChildren(...accts.map((a) => {
+      const b = el("button", { type: "button", "aria-pressed": String(!hiddenLines.has(a)), title: "show or hide this line" }, keyFor(a), labels[a]);
+      b.onclick = () => {
+        hiddenLines.has(a) ? hiddenLines.delete(a) : hiddenLines.add(a);
+        b.setAttribute("aria-pressed", String(!hiddenLines.has(a)));
+        const ch = charts[i], ds = ch && ch.data.datasets.find((d) => d.account === a);
+        if (ds) { ds.hidden = hiddenLines.has(a); ch.update("none"); }
+      };
+      return b;
+    }));
+    $("chart-" + i).closest(".card").style.display = accts.length ? "" : "none";
   });
 }
 async function loadHistory() {
   try {
     const h = await (await fetch("/api/history")).json();
-    labels = h.accounts; history = h.equity; starts = h.start || {};
+    labels = h.accounts; equityHist = h.equity; starts = h.start || {};
     noteGroups(Object.entries(h.groups || {}));
     renderLegend();
     if (!charts[0]) return;
     charts.forEach((ch, i) => {
       ch.data.datasets = Object.keys(labels).filter((a) => chartIndex(a) === i)
-        .map((a) => datasetFor(a, (history[a] || []).map(([x, bal]) => toPoint(a, x, bal))));
+        .map((a) => datasetFor(a, (equityHist[a] || []).map(([x, bal]) => toPoint(a, x, bal))));
       ch.update("none");
     });
   } catch (e) { /* the stream keeps the numbers live; retry on the next interval */ }
@@ -524,14 +650,19 @@ async function loadBacktest() {
   const head = ["Strategy", "Fee", "IS CAGR", "IS max DD", "OOS CAGR", "OOS return", "OOS max DD", "OOS trades", "OOS win rate", "Verdict"];
   const cell = (v, num = true, cls = "") => el("td", { class: (num ? "num " : "") + cls }, v);
   const rows = [];
+  let lastGroup = null;
   for (const [name, st] of Object.entries(rep.strategies)) {
+    if ((st.group || "BTC & ETH") !== lastGroup) {
+      lastGroup = st.group || "BTC & ETH";
+      rows.push(el("tr", { class: "grp" }, el("td", { colspan: 10 }, lastGroup)));
+    }
     Object.entries(st.results).forEach(([fee, r], i) => {
       const cls = st.verdict === "PASSED" ? "pass" : st.verdict === "FAILED BACKTEST" ? "fail" : "";
       const verdict = i === 0 ? el("span", { class: "badge " + cls, style: "margin-left:0", title: st.why }, st.verdict.toLowerCase() === "benchmark" ? "benchmark" : st.verdict) : "";
-      const coins = (st.coins && st.coins.join(",") !== "BTC,ETH" ? ` (${st.coins.join(", ")})` : "")
+      const coins = (st.coins && st.coins.join(",") !== "BTC,ETH" ? ` ${st.coins.join(", ")}` : "")
         + (st.allows_short ? " · long/short, simulated" : "");
       rows.push(el("tr", {},
-        el("td", {}, i === 0 ? el("span", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, name), coins) : ""),
+        el("td", {}, i === 0 ? el("span", {}, keyFor(name), el("strong", {}, name), el("span", { class: "sub" }, coins)) : ""),
         cell(fmtPct(+fee, 1)), cell(fmtPct(r.is.cagr, 1)), cell(fmtPct(r.is.max_dd, 0)),
         cell(fmtPct(r.oos.cagr, 1), true, sgnClass(r.oos.cagr)), cell(fmtPct(r.oos["return"], 1, true), true, sgnClass(r.oos["return"])),
         cell(fmtPct(r.oos.max_dd, 0)), cell(r.oos.trades), cell(r.oos.win_rate == null ? "–" : fmtPct(r.oos.win_rate, 0)),
@@ -539,11 +670,12 @@ async function loadBacktest() {
     });
   }
   const h = rep.hold;
-  if (h) rows.push(el("tr", {}, el("td", {}, el("span", { class: "key", style: `background:${colorOf("HOLD_50_50")}` }), el("strong", {}, "Hold 50/50 BTC/ETH")),
+  if (h) rows.push(el("tr", { class: "grp" }, el("td", { colspan: 10 }, "Benchmark")),
+    el("tr", {}, el("td", {}, keyFor("HOLD_50_50"), el("strong", {}, "Hold 50/50 BTC/ETH")),
     cell("none"), cell(fmtPct(h.is.cagr, 1)), cell(fmtPct(h.is.max_dd, 0)), cell(fmtPct(h.oos.cagr, 1), true, sgnClass(h.oos.cagr)),
     cell(fmtPct(h.oos["return"], 1, true), true, sgnClass(h.oos["return"])), cell(fmtPct(h.oos.max_dd, 0)), cell(0), cell("–"),
     el("td", {}, el("span", { class: "badge", style: "margin-left:0" }, "benchmark"))));
-  box.replaceChildren(el("table", {}, el("thead", {}, el("tr", {}, ...head.map((x, i) => el("th", { class: i > 1 && i < 9 || i === 1 ? "num" : "" }, x)))), el("tbody", {}, ...rows)));
+  box.replaceChildren(el("table", {}, el("thead", {}, el("tr", {}, ...head.map((x, i) => el("th", { class: i >= 1 && i < 9 ? "num" : "" }, x)))), el("tbody", {}, ...rows)));
   if (h) $("backtest-note").textContent = `In-sample ${h.is.start} to ${h.is.end}, out-of-sample ${h.oos.start} to ${h.oos.end}, generated ${String(rep.generated_utc || "").replace("T", " ").slice(0, 16)} UTC. ` + $("backtest-note").textContent;
 }
 
@@ -568,7 +700,7 @@ function renderExpect() {
     };
     const lose = ["day", "week", "year"].map((k) => hz[k] ? `${k} ${Math.round(hz[k].loss_share * 100)}%` : null).filter(Boolean).join(" · ");
     rows.push(el("tr", {},
-      el("td", {}, el("span", { class: "key", style: `background:${colorOf(name)}` }), el("strong", {}, label)),
+      el("td", {}, keyFor(name), el("strong", {}, label)),
       el("td", { class: "num" }, fmtUsd(start)), el("td", { class: "num" }, perWeek),
       cellFor("day"), cellFor("week"), cellFor("year"), el("td", { class: "sub" }, lose || "–")));
   };
@@ -585,17 +717,20 @@ function renderExpect() {
 }
 
 // ---------- stream ----------
-let lastMsg = 0;
+let lastMsg = 0, lastSnap = null;
 function onSnapshot(s) {
   if (!s || s.busy) return;
   lastMsg = Date.now();
+  lastSnap = s;
   $("live").className = "live on";
   $("live-text").textContent = `live · ${utc(s.ts)} UTC`;
-  renderBanners(s); renderBoard(s.leaderboard); renderPrices(s.market);
+  renderBanners(s); renderTicker(s.market);
+  renderBoard(s.leaderboard); renderTiles(s.leaderboard, s.risk);
   if (s.leaderboard.length && Object.keys(lastBoard).length !== s.leaderboard.length) {
     lastBoard = Object.fromEntries(s.leaderboard.map((r) => [r.account, r])); renderExpect();
   }
-  renderStates(s.states); renderRisk(s.risk); renderFeed(s.feed); if (s.fills) renderFills(s.fills);
+  if (!$("p-accounts").hidden) renderCards(s.leaderboard, s.states, s.risk);
+  renderFeed(s.feed); if (s.fills) renderFills(s.fills);
   liveChartPoint(s);
 }
 function connect() {
@@ -616,10 +751,11 @@ $("stop-yes").onclick = async () => {
   } finally { $("stop-yes").disabled = false; $("stop-dlg").close(); }
 };
 
-// Re-read theme colors when the OS theme flips.
+// Re-read theme colours when the OS theme flips.
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { charts.forEach((c) => c && c.destroy()); charts = [null, null, null]; buildChart(); loadHistory(); });
 
-initChips(); buildChart(); loadHistory(); loadBacktest(); connect();
+showTab(location.hash.slice(1) || "overview");
+initFilters(); buildChart(); loadHistory(); loadBacktest(); connect();
 setInterval(() => { charts.forEach((c) => c && c.data.datasets.forEach((d) => { d.data = d.data.filter((p) => !p.live); })); loadHistory(); }, 60000);
 </script>
 </body>
