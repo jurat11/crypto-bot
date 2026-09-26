@@ -334,13 +334,35 @@ class Scalp(Strategy):
       entry, when flat: the last 15 one-minute closes moved at least 0.1% and the close is on the
         same side of its 60-minute average -> go with the move (up = long, down = simulated short)
       exit: +0.3% take profit, -0.3% stop, or 30 minutes, checked on every 1-minute close.
-    Every round trip pays the fee twice, so the average win has to beat the fees."""
+    Every round trip pays the fee twice, so the average win has to beat the fees.
+
+    A variant can set its exits in dollars instead (config overrides take_usd, stop_usd and
+    max_hold_min, where null means no time limit): +$1 on a $10 trade is a +10% move."""
     name, timeframe, allows_short = "SCALP", "1m", True
-    LOOKBACK, AVG, MOVE, TAKE, STOP, MAX_HOLD_MS = 15, 60, 0.001, 0.003, 0.003, 30 * 60_000
+    LOOKBACK, AVG, MOVE, TAKE, STOP, MAX_HOLD_MIN = 15, 60, 0.001, 0.003, 0.003, 30
     EPS = 1e-9  # a price exactly on a level counts as reaching it (float rounding)
     needs = {"1m": 61}
-    rule = ("Every minute: go with a 0.1%+ move of the last 15 minutes (long if up, short if down, on the same "
-            "side of the 1-hour average); close at +0.3%, -0.3% or after 30 minutes. Simulated shorts, 1x.")
+    OVERRIDES = {"take_usd", "stop_usd", "max_hold_min"}
+
+    def __init__(self, name="SCALP", overrides=None, trade_usd=None):
+        o = dict(overrides or {})
+        unknown = set(o) - self.OVERRIDES
+        if unknown:
+            raise ValueError(f"{name}: unknown SCALP settings {sorted(unknown)}")
+        if ("take_usd" in o or "stop_usd" in o) and not trade_usd:
+            raise ValueError(f"{name}: dollar exits need the trade size")
+        self.name = name
+        self.take = o["take_usd"] / trade_usd if "take_usd" in o else self.TAKE
+        self.stop = o["stop_usd"] / trade_usd if "stop_usd" in o else self.STOP
+        hold = o.get("max_hold_min", self.MAX_HOLD_MIN)
+        self.max_hold_ms = None if hold is None else hold * 60_000
+        usd = lambda k, pct, sign: (f"{sign}${o[k]:g} ({sign}{pct:.0%})" if k in o else f"{sign}{pct:.1%}")
+        self.take_text, self.stop_text = usd("take_usd", self.take, "+"), usd("stop_usd", self.stop, "-")
+        size = f" on the ${trade_usd:g} trade" if o.get("take_usd") or o.get("stop_usd") else ""
+        exits = (f"{self.take_text} or {self.stop_text}{size}, whichever comes first; no time limit" if hold is None
+                 else f"{self.take_text}, {self.stop_text}{size} or after {hold} minutes, whichever comes first")
+        self.rule = (f"Every minute: go with a 0.1%+ move of the last 15 minutes (long if up, short if down, on the "
+                     f"same side of the 1-hour average); close at {exits}. Simulated shorts, 1x.")
 
     def decide(self, asset, candles, pos, now_ms):
         m = candles["1m"]
@@ -359,14 +381,14 @@ class Scalp(Strategy):
             held = now_ms - (now_ms if entry_ms is None else entry_ms)
             side = "long" if e > 0 else "short"
             info.update(entry=entry, gain=gain, held_min=round(held / 60_000))
-            if gain >= self.TAKE - self.EPS:
-                info["reason"] = f"close {side}: +{self.TAKE:.1%} take profit"
+            if gain >= self.take - self.EPS:
+                info["reason"] = f"close {side}: {self.take_text} take profit"
                 return 0.0, info
-            if gain <= -self.STOP + self.EPS:
-                info["reason"] = f"close {side}: -{self.STOP:.1%} stop"
+            if gain <= -self.stop + self.EPS:
+                info["reason"] = f"close {side}: {self.stop_text} stop"
                 return 0.0, info
-            if held >= self.MAX_HOLD_MS:
-                info["reason"] = f"close {side}: 30 minute time exit"
+            if self.max_hold_ms is not None and held >= self.max_hold_ms:
+                info["reason"] = f"close {side}: {self.max_hold_ms // 60_000} minute time exit"
                 return 0.0, info
             info["reason"] = f"holding {side}: {gain:+.2%} since entry"
             return e, info
@@ -387,11 +409,12 @@ class Scalp(Strategy):
             entry = pos.get("entry") or price
             sign = 1 if e > 0 else -1
             gain = (price / entry - 1) * sign
-            take, stop = entry * (1 + sign * self.TAKE), entry * (1 - sign * self.STOP)
+            take, stop = entry * (1 + sign * self.take), entry * (1 - sign * self.stop)
             side = "LONG" if e > 0 else "SHORT (simulated)"
+            ends = (f", or closes at {_hhmm((pos.get('entry_ms') or 0) + self.max_hold_ms)}"
+                    if self.max_hold_ms is not None else " (no time limit)")
             return (f"{asset}: {side} since {_hhmm(pos.get('entry_ms', 0))} at {level(entry)}, {gain:+.2%} now; "
-                    f"takes profit at {level(take)}, stops at {level(stop)}, "
-                    f"or closes at {_hhmm((pos.get('entry_ms') or 0) + self.MAX_HOLD_MS)}")
+                    f"takes profit at {level(take)}, stops at {level(stop)}{ends}")
         return (f"{asset}: flat, {info['move15']:+.2%} in the last 15 minutes; opens long above +0.1% "
                 f"(and above the 1-hour average {level(info['avg60'])}), short below -0.1%")
 
@@ -404,7 +427,8 @@ def build(cfg):
     """The four strategies plus the variants in config.json engine.variants.
 
     A variant is a copy of a base strategy with its own name, starting cash and fee.
-    TREND_D1 variants may also override its settings (sma_days, vol_target, ...)."""
+    TREND_D1 variants may also override its settings (sma_days, vol_target, ...), and SCALP
+    variants their exits (take_usd, stop_usd, max_hold_min)."""
     e = cfg.get("engine", {})
     out = [TrendD1(cfg), TrendH4(), BreakoutH1(), MeanRevH1()]
     for s in out:
@@ -414,9 +438,12 @@ def build(cfg):
             raise ValueError(f"{v['name']}: sleeves add up to more than 100% (no leverage)")
         if v["base"] == "TREND_D1":
             s = TrendD1(cfg, v["name"], v.get("overrides"))
+        elif v["base"] == "SCALP":
+            cash = v.get("start_cash", e.get("start_cash", 15.0))
+            s = Scalp(v["name"], v.get("overrides"), trade_usd=cash * max(v.get("sleeves", SLEEVES).values()))
         else:
             if v.get("overrides"):
-                raise ValueError(f"{v['name']}: only TREND_D1 variants can override settings")
+                raise ValueError(f"{v['name']}: only TREND_D1 and SCALP variants can override settings")
             s = BASES[v["base"]]()
             s.name = v["name"]
         s.start_cash = v.get("start_cash", e.get("start_cash", 15.0))

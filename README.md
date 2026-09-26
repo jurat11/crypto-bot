@@ -8,7 +8,7 @@ Four spot strategies (long or cash, BTC and ETH) each run their own **$15 demo a
   - **Why it's only simulated:** a normal spot account can't short, because shorting needs margin (borrowing) or futures. So these accounts are marked **SIMULATED SHORTS**.
   - **The limits:** they trade at 1x with no leverage, at most 50% of the account per coin, and pay a 10%-a-year borrow cost while short (`short_borrow_rate_yearly`).
   - **Real money stays long or cash only.**
-- **Scalping accounts (demo only, simulated shorts):** two $20 accounts that trade fast, long or short for minutes at a time, taking small profits (and small losses) over and over. See "Scalping" below for why fees make this hard.
+- **Scalping accounts (demo only, simulated shorts):** four $20 accounts that trade fast, long or short for minutes at a time, taking small profits (and small losses) over and over. See "Scalping" below for why fees make this hard.
 - **LIVE: off.** `bot/broker.py` `LiveBroker` still refuses to start. The code never reads real exchange keys and never calls api.binance.com trading endpoints.
 
 ## Quick start (Mac)
@@ -75,6 +75,11 @@ They go through the same backtest before they trade. None of them uses leverage.
 - **Backtest:** eight years of 1-minute candles is too much data, so these two are tested on **the last 90 days of 1-minute candles**: the first 45 days in-sample, the last 45 out-of-sample. The rules above were fixed before the test and are not tuned.
 - **Quiet on purpose:** every minute writes a receipt, but the activity feed only shows their trades, and they never send Telegram trade alerts. The daily report still includes them.
 - **Risk rules apply:** a day that loses 8% blocks new trades until the next UTC day, and a 35% drawdown halts them.
+
+**The +$1 scalpers ($20 each):** SCALP_1USD (BTC, ETH) and SCALP_1USD_MEME (DOGE, PEPE). They open exactly like the two above, but each $10 trade closes only at **+$1 or -$1** (a 10% move), with **no time limit**.
+- +$1 on a $10 trade needs a 10% move. That takes days on DOGE or PEPE and often weeks on BTC, so these trade far less and pay far fewer fees.
+- The -$1 stop matters. Without it a losing trade could be held forever, and one bad trade could erase many small wins.
+- Dollars scale with size: on a $1,000 trade, +$1 would be a 0.1% move. The rule is really "close at +10% or -10%".
 
 - **Half the account per coin.** The per-coin cap in the risk rules is 50%, so the gold accounts keep the other half in cash.
 - **No volatility dial.** With $10 per coin, the dial would size memecoin orders below Binance's $5 minimum.

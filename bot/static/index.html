@@ -330,7 +330,7 @@ const flash = (node, now, before) => {
 const GROUPS = ["BTC & ETH", "More coins", "Long/short (simulated)", "Scalping (simulated)"];
 const GROUP_NOTE = { "More coins": "altcoins, memecoins, gold · $20 each",
   "Long/short (simulated)": "picks long or short itself · shorts simulated at 1x with a 10%/yr borrow cost",
-  "Scalping (simulated)": "long or short for minutes at a time · closes at ±0.3% or after 30 min · pays the fee on every open and close" };
+  "Scalping (simulated)": "decides every minute, long or short · SCALP_BTC_ETH / SCALP_MEME close at ±0.3% or 30 min, SCALP_1USD ones at ±$1 · fees on every open and close" };
 const SLOT = { TREND_D1: "--s1", TREND_H4: "--s2", BREAKOUT_H1: "--s3", MEANREV_H1: "--s4", HOLD_50_50: "--s5",
                D1_ALL_IN: "--s6", D1_FAST: "--s7", D1_HIGH_FEE: "--s8" };
 const groupOf = {};

@@ -141,7 +141,8 @@ class LongShort(unittest.TestCase):
     def test_config_accounts(self):
         all_ = {s.name: s for s in strategies.build(CFG)}
         ls = [s for s in all_.values() if s.allows_short]
-        self.assertEqual({s.name for s in ls}, {"LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD", "SCALP_BTC_ETH", "SCALP_MEME"})
+        self.assertEqual({s.name for s in ls}, {"LS_BTC_ETH", "LS_ALTS", "LS_MEME", "LS_GOLD", "SCALP_BTC_ETH", "SCALP_MEME",
+                                               "SCALP_1USD", "SCALP_1USD_MEME"})
         simulated = ("Long/short (simulated)", "Scalping (simulated)")
         self.assertFalse(any(s.allows_short for s in all_.values() if s.group not in simulated))
         self.assertTrue(all(sum(s.sleeves.values()) <= 1.0 for s in ls))  # 1x, no leverage
@@ -338,9 +339,44 @@ class Scalp(unittest.TestCase):
         self.assertEqual(pos["exp"], 0.0)
 
     def test_config_accounts(self):
-        sc = [s for s in strategies.build(CFG) if s.base == "SCALP"]
-        self.assertEqual({s.name for s in sc}, {"SCALP_BTC_ETH", "SCALP_MEME"})
-        self.assertTrue(all(s.timeframe == "1m" and s.allows_short and sum(s.sleeves.values()) <= 1.0 for s in sc))
+        sc = {s.name: s for s in strategies.build(CFG) if s.base == "SCALP"}
+        self.assertEqual(set(sc), {"SCALP_BTC_ETH", "SCALP_MEME", "SCALP_1USD", "SCALP_1USD_MEME"})
+        self.assertTrue(all(s.timeframe == "1m" and s.allows_short and sum(s.sleeves.values()) <= 1.0 for s in sc.values()))
+        one = sc["SCALP_1USD"]  # $20 account, $10 per coin: +$1 is a 10% move
+        self.assertAlmostEqual(one.take, 0.10)
+        self.assertAlmostEqual(one.stop, 0.10)
+        self.assertIsNone(one.max_hold_ms)
+        self.assertIn("close at +$1 (+10%) or -$1 (-10%) on the $10 trade", one.rule)
+        self.assertEqual((sc["SCALP_BTC_ETH"].take, sc["SCALP_BTC_ETH"].max_hold_ms), (0.003, 30 * 60_000))
+
+
+class ScalpOneDollar(unittest.TestCase):
+    """The +$1 / -$1 variant: same entries as SCALP, exits at +-10% of a $10 trade, no time limit."""
+    s = strategies.Scalp("SCALP_1USD", {"take_usd": 1.0, "stop_usd": 1.0, "max_hold_min": None}, trade_usd=10.0)
+    M = 60_000
+
+    def minutes(self, last):
+        return {"1m": bars([100.0] * 60 + [last], step=self.M)}
+
+    def test_holds_small_moves_and_closes_at_one_dollar(self):
+        pos = {"exp": 1.0, "entry": 100.0, "entry_ms": 0}
+        self.assertEqual(self.s.decide("BTC", self.minutes(100.3), pos, 10 * self.M)[0], 1.0)  # +0.3% is only +$0.03
+        exp, info = self.s.decide("BTC", self.minutes(110.0), pos, 10 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close long: +$1 (+10%) take profit"))
+        exp, info = self.s.decide("BTC", self.minutes(90.0), pos, 10 * self.M)
+        self.assertEqual((exp, info["reason"]), (0.0, "close long: -$1 (-10%) stop"))
+
+    def test_no_time_limit(self):
+        pos = {"exp": -1.0, "entry": 100.0, "entry_ms": 0}
+        self.assertEqual(self.s.decide("BTC", self.minutes(99.0), pos, 30 * 24 * 60 * self.M)[0], -1.0)  # a month later
+        text = self.s.describe("BTC", self.s.decide("BTC", self.minutes(99.0), pos, self.M)[1], 99.0, pos)
+        self.assertIn("takes profit at 90.0000, stops at 110.00 (no time limit)", text)
+
+    def test_rejects_unknown_settings(self):
+        with self.assertRaises(ValueError):
+            strategies.Scalp("BAD", {"take_pct": 0.5}, trade_usd=10.0)
+        with self.assertRaises(ValueError):
+            strategies.Scalp("BAD", {"take_usd": 1.0})  # dollar exits need the trade size
 
 
 if __name__ == "__main__":

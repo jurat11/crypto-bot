@@ -239,6 +239,8 @@ class Minute(unittest.TestCase):
         self.assertNotIn("SCALP_MEME", rep["strategies"])  # no DOGE/PEPE minute data here
         self.assertIn("before fees", bt.table(rep))
         self.assertIn("TREND_D1", rep["strategies"])  # the hourly strategies still run
+        one = rep["strategies"]["SCALP_1USD"]["results"]["0.001"]["oos"]
+        self.assertLess(one["trades"], o1["trades"] / 10)  # +-10% exits: far fewer trades than +-0.3%
 
 
 if __name__ == "__main__":
