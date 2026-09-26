@@ -101,3 +101,19 @@ The expected problem, stated before the result: each round trip pays the fee twi
 The result goes here once the backtest runs on real Binance data (it needs network access to data-api.binance.vision).
 
 **Added Sep 26, 2026, before any result for it: the +$1 variant.** After a day of watching, the idea was to close each trade as soon as it is up $1. On a $10 trade that is a 10% move, so SCALP_1USD (BTC, ETH) and SCALP_1USD_MEME (DOGE, PEPE) keep the same entries but close only at +$1 or -$1 (+-10%), with no time limit. The -$1 stop is part of the rule so one losing trade cannot be held forever. Expected, stated before the test: many fewer trades and far less fee drag, but no edge, because the entry signal looks 15 minutes back and these trades last days. The original SCALP_BTC_ETH and SCALP_MEME are unchanged: changing them after one day of live results would be tuning.
+
+**Result (run on the user's Mac, Sep 26, 2026; 1-minute candles, in-sample Jun 28 to Aug 12, out-of-sample Aug 12 to Sep 26, 2026):**
+
+| Account | OOS before fees | OOS after 0.1% fees | OOS trades | OOS win rate | Verdict |
+|---|---|---|---|---|---|
+| SCALP_BTC_ETH | -11.2% | -99.2% | 9,694 | 29% | FAILED BACKTEST |
+| SCALP_MEME | -56.8% | -100.0% | 22,928 | 35% | FAILED BACKTEST |
+| SCALP_1USD | +35.4% | +34.7% | 10 | 100% | PASSED |
+| SCALP_1USD_MEME | -15.1% | -17.3% | 46 | 43% | FAILED BACKTEST |
+
+What it shows:
+- **Fast scalping lost even before fees.** Going with a 15-minute move for a +-0.3% target lost 11% (BTC/ETH) and 57% (DOGE/PEPE) with no fees at all. Over minutes, prices tended to snap back rather than keep going. The fees then did the rest: about 215 trades a day on BTC/ETH cost roughly 10% of the account a day.
+- **The +-$1 rule on BTC/ETH passed, but on very little evidence.** 10 trades is about 5 closed round trips, and all of them won. Five coin flips all landing heads happens about 1 time in 32. The same rule on DOGE/PEPE lost 17% over 46 trades, and it lost in-sample too. Both halves of the BTC/ETH test were positive (about +13% in-sample), which may say more about how BTC and ETH trended in those 90 days than about the rule.
+- **Fees are not the problem for the +-$1 rule** (35.4% before, 34.7% after). Its risk is having too few trades to judge.
+- In demo, the two fast scalpers will hit the 8% daily-loss block most days and the 35% drawdown halt within about a week. That is the risk rules working.
+- The strategies with real evidence are still the slow trend ones in section 6. **Past results do not predict future results.**
