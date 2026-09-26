@@ -4,3 +4,5 @@ __pycache__/
 STOP
 data/*.db
 logs/
+data/cache/
+data/*.db-*
